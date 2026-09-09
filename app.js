@@ -6,6 +6,13 @@ import { resumen, meses, mesLargo, precios, porTienda, compararTiendas } from ".
 import { Camara } from "./camara.js";
 
 const $ = (s) => document.querySelector(s);
+
+// Todo lo que sale del modelo o de un servidor pasa por aqui antes de tocar
+// innerHTML. Un ticket con un nombre de producto trucado, o una respuesta
+// manipulada, podria colar etiquetas y desde ellas leer la clave guardada en
+// este navegador. Es rebuscado, y cuesta cinco lineas cerrarlo.
+const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ESCAPES[c]);
 let bandas = null, ultimo = null, mesActivo = null;
 
 /* ---------- navegacion ---------- */
@@ -47,7 +54,7 @@ async function procesarArchivo(archivo) {
     estado("bien", `Imagen lista, ${img.naturalWidth}×${img.naturalHeight}. ${
       t.n === 1 ? "Cabe en una banda." : `Cortada en ${t.n} bandas para no perder resolución.`}`);
   } catch (err) {
-    estado("mal", "No se pudo leer la imagen: " + err.message);
+    estado("mal", "No se pudo leer la imagen: " + esc(err.message));
   }
 }
 
@@ -78,7 +85,7 @@ async function abrirCamara() {
     cerrarCamara();
     estado("mal", err.name === "NotAllowedError"
       ? "No has dado permiso a la cámara. Puedes elegir una imagen del carrete."
-      : err.message);
+      : esc(err.message));
   }
 }
 
@@ -128,7 +135,7 @@ if (["localhost", "127.0.0.1"].includes(location.hostname) || location.hostname.
       const r = await fetch("muestra.jpg");
       if (!r.ok) throw new Error("no se encontró muestra.jpg");
       await procesarArchivo(new File([await r.blob()], "muestra.jpg", { type: "image/jpeg" }));
-    } catch (err) { estado("mal", "No se pudo cargar el ejemplo: " + err.message); }
+    } catch (err) { estado("mal", "No se pudo cargar el ejemplo: " + esc(err.message)); }
   };
   $("#atajos").append(b);
 }
@@ -142,7 +149,7 @@ $("#botonAnalizar").addEventListener("click", async () => {
     ultimo = r.datos;
     pintarTicket(r.datos, r.uso, r);
   } catch (err) {
-    estado("mal", err.message);
+    estado("mal", esc(err.message));
     $("#botonAnalizar").disabled = false;
   }
 });
@@ -162,14 +169,14 @@ function pintarTicket(d, uso, extra = {}) {
 
   const filas = d.lineas.map((l) => `
     <tr>
-      <td>${l.cantidad > 1 ? `<b>${l.cantidad}×</b> ` : ""}${l.descripcion}
-        <div class="etiqueta">${l.categoria.replace(/_/g, " ")} · IVA ${Math.round(l.iva * 100)}%</div></td>
+      <td>${l.cantidad > 1 ? `<b>${l.cantidad}×</b> ` : ""}${esc(l.descripcion)}
+        <div class="etiqueta">${esc(l.categoria).replace(/_/g, " ")} · IVA ${Math.round(l.iva * 100)}%</div></td>
       <td class="num">${eur(l.importe)}</td>
     </tr>`).join("");
 
   $("#resultado").innerHTML = `
     <div class="tarjeta">
-      <h2>${d.comercio} · ${new Date(d.fecha).toLocaleDateString("es-ES",
+      <h2>${esc(d.comercio)} · ${new Date(d.fecha).toLocaleDateString("es-ES",
         { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}</h2>
       <table>${filas}
         <tr class="totalfila"><td>Total</td><td class="num">${eur(d.total)}</td></tr>
@@ -231,7 +238,7 @@ function pintarInforme() {
   $("#tiendas").innerHTML = ts.length > 1 || ts[0]?.comercio
     ? ts.map((t) => `
       <div class="barra">
-        <div class="cab"><span style="text-transform:capitalize">${t.comercio}</span>
+        <div class="cab"><span style="text-transform:capitalize">${esc(t.comercio)}</span>
           <span>${eur(t.importe)} <span style="color:var(--tenue)">${t.compras} ${t.compras === 1 ? "compra" : "compras"}</span></span></div>
         <div class="canal"><div class="relleno" style="width:${t.importe / topeT * 100}%"></div></div>
       </div>`).join("")
@@ -241,11 +248,11 @@ function pintarInforme() {
   const cs = compararTiendas();
   $("#comparativa").innerHTML = cs.length ? cs.slice(0, 12).map((c) => `
       <div class="barra">
-        <div class="cab"><span>${c.producto}</span>
+        <div class="cab"><span>${esc(c.producto)}</span>
           <span class="bajar">−${eur(c.diferencia)}/${c.unidad}</span></div>
         <div style="font-size:.8rem;color:var(--tenue);text-transform:capitalize">
-          ${c.filas.map((f, i) => `${i === 0 ? "✓ " : ""}${f.comercio} ${eur(f.precio)}`).join(" · ")}
-          <span style="text-transform:none"> · ${Math.round(c.porcentaje * 100)}% más caro en ${c.cara.comercio}</span></div>
+          ${c.filas.map((f, i) => `${i === 0 ? "✓ " : ""}${esc(f.comercio)} ${eur(f.precio)}`).join(" · ")}
+          <span style="text-transform:none"> · ${Math.round(c.porcentaje * 100)}% más caro en ${esc(c.cara.comercio)}</span></div>
       </div>`).join("")
     : `<div class="vacio">Hace falta comprar el mismo producto en dos cadenas distintas.
        ${ts.length < 2 ? "De momento solo has escaneado en una." : ""}</div>`;
@@ -255,7 +262,7 @@ function pintarInforme() {
     const pct = p.variacion * 100;
     const signo = pct > 0 ? "+" : "";
     return `<div class="barra"><div class="cab">
-        <span>${p.producto}</span>
+        <span>${esc(p.producto)}</span>
         <span class="${pct > 0.5 ? "subir" : pct < -0.5 ? "bajar" : ""}">
           ${eur(p.ultimo)}/${p.unidad} <b>${signo}${pct.toFixed(1)}%</b></span>
       </div><div style="font-size:.78rem;color:var(--tenue)">
