@@ -20,17 +20,23 @@
 
   <!-- ESCANEAR -->
   <section id="vistaEscanear">
-    <label class="escaner" id="zonaEscaner" for="ficheroTicket">
+    <div class="escaner" id="zonaEscaner">
+      <video id="video" playsinline muted class="oculto"></video>
       <div class="texto" id="textoEscaner">
         <span class="icono">🧾</span>
-        <span id="lemaEscaner">Toca para fotografiar el ticket</span>
-        <div class="etiqueta" style="margin-top:10px">Entero, plano y bien iluminado</div>
+        <span id="lemaEscaner">Toca para abrir la cámara</span>
+        <div class="etiqueta" style="margin-top:10px">Dispara sola cuando el ticket se vea bien</div>
       </div>
-      <div class="marco"><span></span><span></span><span></span><span></span></div>
-    </label>
+      <div class="marco" id="marco"><span></span><span></span><span></span><span></span></div>
+      <div class="pista" id="pista"></div>
+    </div>
     <input type="file" id="ficheroTicket" accept="image/*">
 
-    <div class="fila" id="atajos" style="margin-top:10px"></div>
+    <div class="fila" id="atajos" style="margin-top:10px">
+      <button class="fino" id="botonArchivo">Elegir imagen</button>
+      <button class="fino oculto" id="botonManual">Disparar ahora</button>
+      <button class="fino oculto" id="botonCancelar">Cancelar</button>
+    </div>
     <button class="principal" id="botonAnalizar" disabled>Leer el ticket</button>
     <div id="estado"></div>
     <div id="resultado"></div>
@@ -48,6 +54,14 @@
     <div class="tarjeta">
       <h2>En qué se va</h2>
       <div id="categorias"></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Por supermercado</h2>
+      <div id="tiendas"></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Dónde sale más barato</h2>
+      <div id="comparativa"></div>
     </div>
     <div class="tarjeta">
       <h2>Cómo se mueven los precios</h2>

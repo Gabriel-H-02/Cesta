@@ -2,7 +2,8 @@ import { CLAVE_LS, DATOS_LS } from "./config.js";
 import { cargarImagen, trocear } from "./imagen.js";
 import { analizarTicket, coste } from "./parser.js";
 import { verificar, guardar, leerTodos, exportar, eur } from "./almacen.js";
-import { resumen, meses, mesLargo, precios } from "./informe.js";
+import { resumen, meses, mesLargo, precios, porTienda, compararTiendas } from "./informe.js";
+import { Camara } from "./camara.js";
 
 const $ = (s) => document.querySelector(s);
 let bandas = null, ultimo = null, mesActivo = null;
@@ -40,9 +41,8 @@ async function procesarArchivo(archivo) {
     const img = await cargarImagen(archivo);
     const t = trocear(img);
     bandas = t.bandas;
-    const z = $("#zonaEscaner");
-    z.classList.add("lleno");
-    $("#textoEscaner").outerHTML = `<img id="textoEscaner" src="${t.vistaPrevia}" alt="Ticket">`;
+    zona.classList.add("lleno");
+    $("#textoEscaner").innerHTML = `<img src="${t.vistaPrevia}" alt="Ticket">`;
     $("#botonAnalizar").disabled = false;
     estado("bien", `Imagen lista, ${img.naturalWidth}×${img.naturalHeight}. ${
       t.n === 1 ? "Cabe en una banda." : `Cortada en ${t.n} bandas para no perder resolución.`}`);
@@ -51,24 +51,57 @@ async function procesarArchivo(archivo) {
   }
 }
 
-// 1. Selector de archivos.
-const entrada = $("#ficheroTicket");
-entrada.addEventListener("change", (e) => procesarArchivo(e.target.files[0]));
-
-// En movil se pide la camara trasera; en escritorio 'capture' estorba.
-const tactil = matchMedia("(pointer: coarse)").matches;
-if (tactil) entrada.setAttribute("capture", "environment");
-else $("#lemaEscaner").textContent = "Arrastra el ticket aquí, pégalo con Cmd+V, o haz clic";
-
-// El clic se dispara a mano: mas fiable que confiar en el label.
-$("#zonaEscaner").addEventListener("click", (e) => {
-  e.preventDefault();
-  try { entrada.click(); }
-  catch { estado("mal", "Este navegador no deja abrir el selector. Arrastra la imagen o pégala con Cmd+V."); }
+// 1. Camara en vivo con disparo automatico.
+const zona = $("#zonaEscaner");
+const camara = new Camara($("#video"), pintarEstadoCamara, (archivo) => {
+  cerrarCamara();
+  procesarArchivo(archivo);
 });
 
-// 2. Arrastrar y soltar.
-const zona = $("#zonaEscaner");
+function pintarEstadoCamara(e) {
+  zona.dataset.estado = e.clave;
+  const p = $("#pista");
+  p.dataset.texto = e.texto;
+  p.style.setProperty("--avance", `${Math.round((e.progreso || 0) * 100)}%`);
+}
+
+async function abrirCamara() {
+  try {
+    $("#video").classList.remove("oculto");
+    $("#textoEscaner").classList.add("oculto");
+    zona.classList.add("grabando");
+    $("#botonManual").classList.remove("oculto");
+    $("#botonCancelar").classList.remove("oculto");
+    estado("");
+    await camara.arrancar();
+  } catch (err) {
+    cerrarCamara();
+    estado("mal", err.name === "NotAllowedError"
+      ? "No has dado permiso a la cámara. Puedes elegir una imagen del carrete."
+      : err.message);
+  }
+}
+
+function cerrarCamara() {
+  camara.parar();
+  $("#video").classList.add("oculto");
+  $("#textoEscaner").classList.remove("oculto");
+  zona.classList.remove("grabando");
+  delete zona.dataset.estado;
+  $("#botonManual").classList.add("oculto");
+  $("#botonCancelar").classList.add("oculto");
+}
+
+zona.addEventListener("click", () => { if (!camara.activa) abrirCamara(); });
+$("#botonManual").onclick = () => camara.disparar();
+$("#botonCancelar").onclick = () => { cerrarCamara(); estado(""); };
+
+// 2. Selector de archivos, para el escritorio y por si la camara falla.
+const entrada = $("#ficheroTicket");
+entrada.addEventListener("change", (e) => procesarArchivo(e.target.files[0]));
+$("#botonArchivo").onclick = (e) => { e.stopPropagation(); entrada.click(); };
+
+// 3. Arrastrar y soltar.
 ["dragenter", "dragover"].forEach((ev) => zona.addEventListener(ev, (e) => {
   e.preventDefault(); zona.style.borderColor = "var(--acento)";
 }));
@@ -77,25 +110,24 @@ const zona = $("#zonaEscaner");
 }));
 zona.addEventListener("drop", (e) => procesarArchivo(e.dataTransfer.files[0]));
 
-// 3. Pegar del portapapeles.
+// 4. Pegar del portapapeles.
 addEventListener("paste", (e) => {
   const it = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith("image/"));
   if (it) procesarArchivo(it.getAsFile());
 });
 
-// 4. El ticket de ejemplo, para probar el circuito sin tocar ningun dialogo.
-//    Solo aparece en local; en produccion no hay muestra que cargar.
+// 5. El ticket de ejemplo, para probar el circuito en local sin camara.
 if (["localhost", "127.0.0.1"].includes(location.hostname) || location.hostname.startsWith("172.")) {
   const b = document.createElement("button");
   b.className = "fino";
-  b.textContent = "Usar el ticket de ejemplo";
-  b.onclick = async () => {
+  b.textContent = "Ticket de ejemplo";
+  b.onclick = async (e) => {
+    e.stopPropagation();
     estado("trabajando", "Cargando el ticket de ejemplo…");
     try {
       const r = await fetch("muestra.jpg");
       if (!r.ok) throw new Error("no se encontró muestra.jpg");
-      const blob = await r.blob();
-      await procesarArchivo(new File([blob], "muestra.jpg", { type: "image/jpeg" }));
+      await procesarArchivo(new File([await r.blob()], "muestra.jpg", { type: "image/jpeg" }));
     } catch (err) { estado("mal", "No se pudo cargar el ejemplo: " + err.message); }
   };
   $("#atajos").append(b);
@@ -168,6 +200,8 @@ function pintarInforme() {
     $("#detalleMes").textContent = "Todavía no hay ningún ticket.";
     $("#categorias").innerHTML = '<div class="vacio">Escanea el primero y esto se llena solo.</div>';
     $("#preciosLista").innerHTML = '<div class="vacio">Hacen falta dos compras del mismo producto para comparar.</div>';
+    $("#tiendas").innerHTML = '<div class="vacio">Sin compras todavía.</div>';
+    $("#comparativa").innerHTML = '<div class="vacio">Escanea en dos supermercados distintos y aquí verás dónde sale más barato cada cosa.</div>';
     return;
   }
   if (!ms.includes(mesActivo)) mesActivo = ms[0];
@@ -190,6 +224,31 @@ function pintarInforme() {
         <span>${eur(c.importe)} <span style="color:var(--tenue)">${Math.round(c.importe / r.total * 100)}%</span></span></div>
       <div class="canal"><div class="relleno" style="width:${c.importe / tope * 100}%"></div></div>
     </div>`).join("");
+
+  // Por supermercado
+  const ts = porTienda(mesActivo);
+  const topeT = ts[0]?.importe || 1;
+  $("#tiendas").innerHTML = ts.length > 1 || ts[0]?.comercio
+    ? ts.map((t) => `
+      <div class="barra">
+        <div class="cab"><span style="text-transform:capitalize">${t.comercio}</span>
+          <span>${eur(t.importe)} <span style="color:var(--tenue)">${t.compras} ${t.compras === 1 ? "compra" : "compras"}</span></span></div>
+        <div class="canal"><div class="relleno" style="width:${t.importe / topeT * 100}%"></div></div>
+      </div>`).join("")
+    : '<div class="vacio">Todavía no hay compras.</div>';
+
+  // Comparativa entre cadenas
+  const cs = compararTiendas();
+  $("#comparativa").innerHTML = cs.length ? cs.slice(0, 12).map((c) => `
+      <div class="barra">
+        <div class="cab"><span>${c.producto}</span>
+          <span class="bajar">−${eur(c.diferencia)}/${c.unidad}</span></div>
+        <div style="font-size:.8rem;color:var(--tenue);text-transform:capitalize">
+          ${c.filas.map((f, i) => `${i === 0 ? "✓ " : ""}${f.comercio} ${eur(f.precio)}`).join(" · ")}
+          <span style="text-transform:none"> · ${Math.round(c.porcentaje * 100)}% más caro en ${c.cara.comercio}</span></div>
+      </div>`).join("")
+    : `<div class="vacio">Hace falta comprar el mismo producto en dos cadenas distintas.
+       ${ts.length < 2 ? "De momento solo has escaneado en una." : ""}</div>`;
 
   const ps = precios();
   $("#preciosLista").innerHTML = ps.length ? ps.slice(0, 15).map((p) => {

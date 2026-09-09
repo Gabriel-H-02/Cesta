@@ -11,9 +11,11 @@ export const CATEGORIAS = [
 export const ESQUEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["comercio", "fecha", "factura", "lineas", "total", "desglose_iva"],
+  required: ["comercio", "tienda", "fecha", "factura", "lineas", "total", "desglose_iva"],
+  // desglose_iva puede venir vacio: hay cadenas que no lo desglosan por tramos.
   properties: {
-    comercio: { type: "string" },
+    comercio: { type: "string", description: "Nombre de la cadena, normalizado y estable entre tickets: mercadona, carrefour, dia, lidl, aldi, alcampo, eroski... En minusculas y sin S.A. ni razon social." },
+    tienda: { type: ["string", "null"], description: "Direccion o localidad del establecimiento concreto, si aparece." },
     fecha: { type: "string", description: "ISO 8601, p.ej. 2026-08-31T14:23" },
     factura: { type: ["string", "null"], description: "Numero de factura simplificada" },
     total: { type: "number" },
@@ -55,7 +57,10 @@ export const ESQUEMA = {
   },
 };
 
-export const SISTEMA = `Extraes las lineas de un ticket de supermercado espanol a datos estructurados.
+export const SISTEMA = `Extraes las lineas de un ticket de supermercado a datos estructurados.
+Funcionas con cualquier cadena: Mercadona, Carrefour, Dia, Lidl, Aldi, Alcampo,
+Eroski, Consum, o la tienda del barrio. No supongas un formato concreto: lee el
+que tengas delante.
 
 FORMATO DE ENTRADA
 Recibes una o varias imagenes. Cuando son varias son BANDAS HORIZONTALES CONSECUTIVAS
@@ -64,28 +69,38 @@ aparezcan en dos bandas son la misma linea: cuentala UNA sola vez. Reconstruye e
 ticket entero antes de escribir nada.
 
 COMO LEER LAS LINEAS
-La tabla tiene tres columnas: cantidad a la izquierda, descripcion, y a la derecha
-P. Unit e Imp. (EUR). Cuando la cantidad es 1, Mercadona deja P. Unit vacia y solo
-imprime el importe: en ese caso precio_unit es null y el numero que ves es el importe.
-Cuando hay varias unidades aparecen los dos numeros.
-Los articulos a peso llevan una linea adicional con los kg y el precio por kilo.
+Los formatos varian mucho. Lo habitual es cantidad, descripcion y a la derecha uno o
+dos numeros: el precio unitario y el importe de la linea. Cuando solo hay un numero,
+ese es el importe y precio_unit va a null. Cuando la cantidad es 1 muchas cadenas
+dejan el precio unitario vacio.
+Los articulos a peso suelen llevar una linea adicional con los kilos y el precio por
+kilo; usala para peso_kg.
+Ojo con lo que NO es una linea de producto: descuentos, promociones, puntos de
+fidelizacion, bolsas y redondeos aparecen mezclados. Un descuento va como linea con
+importe negativo, no se omite, porque si no las cuentas no cuadran.
 Las descripciones llevan acentos, la enye y simbolos como % o + dentro del nombre.
-Transcribelas literalmente en 'descripcion'; el nombre limpio va en 'producto'.
+Transcribelas literalmente en 'descripcion'; el nombre limpio y estable va en
+'producto'. Ese nombre es la clave con la que se compara el mismo articulo entre
+meses Y ENTRE CADENAS, asi que escribelo generico: "leche semidesnatada" y no
+"LECHE SEMI HACENDADO 1L".
 
 IVA
 En Espana: 4% alimentos basicos (pan, leche, queso, huevos, fruta, verdura, legumbre,
-tuberculo, cereal), 10% el resto de alimentos y bebidas sin alcohol, 21% todo lo que
-no es comida. Asigna el tipo que corresponda por ley a cada articulo.
+tuberculo, cereal), 10% el resto de alimentos y bebidas sin alcohol, 21% alcohol y
+todo lo que no es comida. Asigna a cada articulo el tipo que le corresponde por ley.
 
 ARITMETICA, LO MAS IMPORTANTE
 Antes de responder comprueba tu propio trabajo:
-1. La suma de los importes de todas las lineas tiene que dar exactamente el TOTAL impreso.
-2. Para cada tipo de IVA, la suma de los importes de las lineas que le has asignado
-   tiene que dar base + cuota de ese tramo del desglose.
-Si alguna de las dos no cuadra, vuelve a mirar las imagenes: te has saltado una linea,
-has leido mal un digito, o has clasificado mal un articulo. Corrigelo y repite la
-comprobacion. No entregues numeros que no cuadren y no inventes una linea para forzar
-el cuadre.
+1. La suma de los importes de todas las lineas tiene que dar exactamente el TOTAL
+   impreso. Los descuentos restan.
+2. Si el ticket trae desglose de IVA por tramos, para cada tipo la suma de los
+   importes de las lineas que le has asignado tiene que dar base + cuota de ese tramo.
+   Si el ticket NO lo trae, deja desglose_iva como lista vacia. No lo inventes ni lo
+   calcules tu: solo se transcribe si esta impreso.
+Si alguna comprobacion no cuadra, vuelve a mirar las imagenes: te has saltado una
+linea, has leido mal un digito, has olvidado un descuento, o has clasificado mal un
+articulo. Corrigelo y repite. No entregues numeros que no cuadren y no inventes una
+linea para forzar el cuadre.
 
 Devuelve solo los datos que se leen en el ticket.`;
 

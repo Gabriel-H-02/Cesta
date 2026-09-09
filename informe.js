@@ -34,18 +34,79 @@ export function meses() {
   return [...new Set(leerTodos().map((t) => mesDe(t.fecha)))].sort().reverse();
 }
 
+// Gasto por cadena. Sale del campo 'comercio', que hasta ahora se guardaba y no
+// se usaba para nada.
+export function porTienda(mes) {
+  const { tickets, total } = resumen(mes);
+  const por = {};
+  for (const t of tickets) {
+    const c = t.comercio || "sin identificar";
+    (por[c] ||= { comercio: c, importe: 0, compras: 0 });
+    por[c].importe += t.lineas.reduce((a, l) => a + l.importe, 0);
+    por[c].compras++;
+  }
+  return Object.values(por)
+    .map((x) => ({ ...x, cuota: total ? x.importe / total : 0, medio: x.importe / x.compras }))
+    .sort((a, b) => b.importe - a.importe);
+}
+
+// Precio unitario de una linea, normalizado a euro por kilo, litro o unidad.
+// Devuelve null cuando no se puede saber cuanto producto habia.
+function unitario(l) {
+  const cantidad = l.cantidad_norm || l.peso_kg;
+  if (!cantidad || cantidad <= 0 || l.importe <= 0) return null;
+  return l.importe / ((l.cantidad || 1) * cantidad);
+}
+
+// La comparacion entre supermercados. Para cada producto comprado en dos cadenas
+// o mas, cuanto cuesta la unidad en cada una y cuanto te ahorras yendo a la barata.
+//
+// Se usa la MEDIANA y no la media: una oferta puntual no puede decidir por si sola
+// que una cadena es la barata.
+export function compararTiendas() {
+  const por = {};
+  for (const t of leerTodos()) {
+    for (const l of t.lineas) {
+      const u = unitario(l);
+      if (u === null) continue;
+      const p = (por[l.producto] ||= { producto: l.producto, unidad: l.unidad_norm, tiendas: {} });
+      (p.tiendas[t.comercio || "sin identificar"] ||= []).push(u);
+    }
+  }
+
+  const mediana = (xs) => {
+    const o = [...xs].sort((a, b) => a - b);
+    const m = Math.floor(o.length / 2);
+    return o.length % 2 ? o[m] : (o[m - 1] + o[m]) / 2;
+  };
+
+  return Object.values(por)
+    .map((p) => {
+      const filas = Object.entries(p.tiendas)
+        .map(([comercio, precios]) => ({ comercio, precio: mediana(precios), n: precios.length }))
+        .sort((a, b) => a.precio - b.precio);
+      if (filas.length < 2) return null;
+      const barata = filas[0], cara = filas[filas.length - 1];
+      return {
+        producto: p.producto, unidad: p.unidad, filas, barata, cara,
+        diferencia: cara.precio - barata.precio,
+        porcentaje: barata.precio ? (cara.precio - barata.precio) / barata.precio : 0,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.porcentaje - a.porcentaje);
+}
+
 // Precio por unidad normalizada de cada producto a lo largo del tiempo.
 // Solo devuelve los que tienen dos observaciones o mas: con una no hay nada que comparar.
 export function precios() {
   const por = {};
   for (const t of leerTodos()) {
     for (const l of t.lineas) {
-      const cantidad = l.cantidad_norm || l.peso_kg;
-      if (!cantidad || cantidad <= 0) continue;
-      const unidades = (l.cantidad || 1) * cantidad;   // p.ej. 2 bolsas x 0,25 kg
-      const unitario = l.importe / unidades;
+      const u = unitario(l);
+      if (u === null) continue;
       (por[l.producto] ||= { producto: l.producto, unidad: l.unidad_norm, puntos: [] })
-        .puntos.push({ fecha: t.fecha.slice(0, 10), precio: unitario });
+        .puntos.push({ fecha: t.fecha.slice(0, 10), precio: u, comercio: t.comercio });
     }
   }
   return Object.values(por)

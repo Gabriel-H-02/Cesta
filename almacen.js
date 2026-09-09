@@ -19,19 +19,26 @@ export function verificar(d) {
     return { tipo: t.tipo, bruto, asignado, cuadra: bruto === asignado };
   });
 
+  // Hay cadenas que no imprimen el desglose por tramos. Sin el, la unica
+  // comprobacion posible es la suma contra el total, y eso no es un error.
+  const hayDesglose = (d.desglose_iva || []).length > 0;
   const sumaIva = (d.desglose_iva || []).reduce((a, t) => a + cent(t.base) + cent(t.cuota), 0);
 
   const avisos = [];
   if (sumaLineas !== total)
     avisos.push(`Las lineas suman ${eur(sumaLineas / 100)} y el total impreso es ${eur(total / 100)}.`);
-  if (sumaIva !== total)
-    avisos.push(`El desglose de IVA suma ${eur(sumaIva / 100)}, no ${eur(total / 100)}.`);
-  for (const t of tramos)
-    if (!t.cuadra)
-      avisos.push(`IVA ${Math.round(t.tipo * 100)}%: las lineas asignadas suman ${eur(t.asignado / 100)} y el tramo pide ${eur(t.bruto / 100)}.`);
+  if (hayDesglose) {
+    if (sumaIva !== total)
+      avisos.push(`El desglose de IVA suma ${eur(sumaIva / 100)}, no ${eur(total / 100)}.`);
+    for (const t of tramos)
+      if (!t.cuadra)
+        avisos.push(`IVA ${Math.round(t.tipo * 100)}%: las lineas asignadas suman ${eur(t.asignado / 100)} y el tramo pide ${eur(t.bruto / 100)}.`);
+  }
 
   return {
     ok: avisos.length === 0,
+    hayDesglose,
+    controles: hayDesglose ? 2 : 1,
     cuadraTotal: sumaLineas === total,
     sumaLineas: sumaLineas / 100,
     tramos,
