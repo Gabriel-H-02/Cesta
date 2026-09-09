@@ -35,7 +35,7 @@ export const ESQUEMA = {
           precio_unit: { type: ["number", "null"], description: "Columna P. Unit. Suele venir vacia cuando la cantidad es 1; en ese caso null." },
           importe: { type: "number", description: "Columna Imp. (EUR) de esa linea." },
           categoria: { type: "string", enum: CATEGORIAS },
-          iva: { type: "number", enum: [0.04, 0.10, 0.21] },
+          iva: { type: "number", description: "0.04, 0.10 o 0.21" },
           cantidad_norm: { type: ["number", "null"], description: "Cantidad en la unidad normalizada. 'ICEBERG 250 GR' son 0.25 con unidad kg. Null si no se puede deducir del nombre." },
           unidad_norm: { type: "string", enum: ["kg", "l", "ud"] },
         },
@@ -48,7 +48,7 @@ export const ESQUEMA = {
         additionalProperties: false,
         required: ["tipo", "base", "cuota"],
         properties: {
-          tipo: { type: "number", enum: [0.04, 0.10, 0.21] },
+          tipo: { type: "number", description: "0.04, 0.10 o 0.21" },
           base: { type: "number" },
           cuota: { type: "number" },
         },

@@ -1,27 +1,91 @@
 // El adaptador. Todo lo que sabe del modelo esta detras de analizarTicket().
 // Cambiar de 'directo' a 'servidor' no toca ni la interfaz ni el almacen.
 
-import Anthropic from "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.122.0/+esm";
 import { CONFIG, CLAVE_LS } from "./config.js";
-import { PETICION_BASE } from "./contrato.js";
+import { PETICION_BASE, SISTEMA, ESQUEMA } from "./contrato.js";
+
+function instrucciones(n) {
+  return n === 1
+    ? "Ticket completo en una sola imagen. Extrae sus lineas."
+    : `Ticket repartido en ${n} bandas horizontales consecutivas, de arriba abajo, con solape entre bandas contiguas. Reconstruyelo y extrae sus lineas sin duplicar las que salgan dos veces.`;
+}
 
 function contenido(bandas) {
   const bloques = bandas.map((b) => ({
     type: "image",
     source: { type: "base64", media_type: "image/jpeg", data: b },
   }));
-  bloques.push({
-    type: "text",
-    text: bandas.length === 1
-      ? "Ticket completo en una sola imagen. Extrae sus lineas."
-      : `Ticket repartido en ${bandas.length} bandas horizontales consecutivas, de arriba abajo, con solape entre bandas contiguas. Reconstruyelo y extrae sus lineas sin duplicar las que salgan dos veces.`,
-  });
+  bloques.push({ type: "text", text: instrucciones(bandas.length) });
   return bloques;
 }
 
-async function viaNavegador(bandas) {
+
+// ---------------------------------------------------------------- Gemini
+// API de Interactions, comprobada contra la documentacion el 9 sep 2026.
+//   POST https://generativelanguage.googleapis.com/v1beta/interactions
+//   cabecera x-goog-api-key
+//   input: lista de bloques {type:"text"|"image"}
+//   response_format: {type:"text", mime_type:"application/json", schema}
+// El CORS lo permite desde el navegador: comprobado contra el propio servidor.
+
+const GEMINI = "https://generativelanguage.googleapis.com/v1beta/interactions";
+
+// El texto generado. Los SDK lo exponen como output_text; en REST crudo la
+// forma exacta no la he podido verificar sin clave, asi que si no viene ese
+// atajo se recorre la respuesta recogiendo los bloques de texto.
+function textoDe(r) {
+  if (typeof r.output_text === "string" && r.output_text) return r.output_text;
+  const trozos = [];
+  (function andar(x) {
+    if (!x || typeof x !== "object") return;
+    if (Array.isArray(x)) return x.forEach(andar);
+    if (x.type === "text" && typeof x.text === "string") trozos.push(x.text);
+    for (const v of Object.values(x)) andar(v);
+  })(r.output ?? r);
+  return trozos.join("");
+}
+
+async function viaGemini(bandas) {
   const apiKey = localStorage.getItem(CLAVE_LS);
-  if (!apiKey) throw new Error("Falta la clave de API. Abre los ajustes.");
+  if (!apiKey) throw new Error("Falta la clave de Google AI Studio. Abre los ajustes.");
+
+  const entrada = bandas.map((b) => ({ type: "image", data: b, mime_type: "image/jpeg" }));
+  entrada.push({ type: "text", text: instrucciones(bandas.length) });
+
+  const r = await fetch(GEMINI, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+    body: JSON.stringify({
+      model: CONFIG.modelo.gemini,
+      system_instruction: SISTEMA,
+      input: entrada,
+      response_format: { type: "text", mime_type: "application/json", schema: ESQUEMA },
+    }),
+  });
+
+  if (!r.ok) {
+    const cuerpo = await r.text();
+    if (r.status === 429)
+      throw new Error("Has agotado la cuota gratuita de hoy. Vuelve a intentarlo mañana.");
+    if (r.status === 400 && cuerpo.includes("API key"))
+      throw new Error("La clave no es válida. Revísala en Ajustes.");
+    throw new Error(`Gemini respondió ${r.status}. ${cuerpo.slice(0, 200)}`);
+  }
+
+  const datos = await r.json();
+  const texto = textoDe(datos);
+  if (!texto) throw new Error("Gemini no devolvió texto que se pueda leer.");
+  return { datos: JSON.parse(texto), uso: datos.usage ?? null, gratis: true };
+}
+
+// El SDK son 175 KB del CDN. Se carga solo si de verdad se usa Claude, para que
+// la via de Gemini no arrastre ninguna dependencia externa.
+let Anthropic = null;
+
+async function viaAnthropic(bandas) {
+  const apiKey = localStorage.getItem(CLAVE_LS);
+  if (!apiKey) throw new Error("Falta la clave de Anthropic. Abre los ajustes.");
+  Anthropic ??= (await import("https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.122.0/+esm")).default;
 
   const cliente = new Anthropic({
     apiKey,
@@ -74,7 +138,8 @@ function discrepancias(a, b) {
 }
 
 async function unaLectura(bandas) {
-  return CONFIG.modo === "servidor" ? viaServidor(bandas) : viaNavegador(bandas);
+  if (CONFIG.modo === "servidor") return viaServidor(bandas);
+  return CONFIG.proveedor === "gemini" ? viaGemini(bandas) : viaAnthropic(bandas);
 }
 
 export async function analizarTicket(bandas) {
@@ -91,10 +156,10 @@ export async function analizarTicket(bandas) {
            discrepancias: discrepancias(a.datos, b.datos) };
 }
 
-// Precios de Claude Opus 5: 5 $/Mtok de entrada, 25 $/Mtok de salida.
+// Coste de una lectura. Con Gemini en el nivel gratuito no hay ninguno.
+// Con Claude Opus 5: 5 $/Mtok de entrada, 25 $/Mtok de salida.
 export function coste(uso) {
+  if (CONFIG.proveedor === "gemini") return 0;
   if (!uso) return null;
-  const entrada = (uso.input_tokens || 0) / 1e6 * 5;
-  const salida = (uso.output_tokens || 0) / 1e6 * 25;
-  return entrada + salida;
+  return (uso.input_tokens || 0) / 1e6 * 5 + (uso.output_tokens || 0) / 1e6 * 25;
 }

@@ -177,7 +177,7 @@ function pintarTicket(d, uso, extra = {}) {
       <button class="principal" id="botonGuardar">
         ${limpio ? "Guardar" : "Guardar de todas formas"}
       </button>
-      <p class="nota">${d.lineas.length} líneas${uso ? ` · ${(coste(uso) * 100).toFixed(1)} céntimos de análisis` : ""}<br>
+      <p class="nota">${d.lineas.length} líneas${coste(uso) === 0 ? " · lectura gratuita" : uso ? ` · ${(coste(uso) * 100).toFixed(1)} céntimos` : ""}<br>
         Compara las líneas con la foto antes de guardar: la suma de control caza
         omisiones y dígitos mal leídos, pero no dos errores que se compensen.</p>
     </div>`;

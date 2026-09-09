@@ -5,6 +5,13 @@
 // Para cambiar de uno a otro se toca solo este archivo.
 
 export const CONFIG = {
+  // Quien lee el ticket.
+  //   'gemini'    Google AI Studio. Nivel gratuito permanente, sin tarjeta.
+  //   'anthropic' Claude. Mejor lector, pero se paga por uso.
+  // Se cambia solo aqui: el resto de la app no sabe quien hay detras.
+  proveedor: "gemini",
+  modelo: { gemini: "gemini-3.8-flash", anthropic: "claude-opus-5" },
+
   modo: "directo",
   endpoint: "/api/ticket",   // solo se usa en modo 'servidor'
   anchoMax: 1000,            // px, ancho al que se reduce la foto antes de trocearla
