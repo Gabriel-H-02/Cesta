@@ -1,0 +1,24 @@
+// La puerta que se deja abierta.
+// modo 'directo'  -> el movil llama a la API con tu clave. Cero infraestructura.
+// modo 'servidor' -> el movil manda la imagen a tu backend y este llama a la API.
+//                    La clave deja de vivir en el telefono y la app se puede publicar.
+// Para cambiar de uno a otro se toca solo este archivo.
+
+export const CONFIG = {
+  modo: "directo",
+  endpoint: "/api/ticket",   // solo se usa en modo 'servidor'
+  anchoMax: 1000,            // px, ancho al que se reduce la foto antes de trocearla
+  altoBanda: 1100,           // px, alto de cada banda
+  solape: 160,               // px que comparten dos bandas seguidas
+
+  // Doble lectura: analiza el ticket dos veces, por separado, y compara.
+  // La suma de control caza omisiones y digitos mal leidos, pero NO caza dos
+  // errores que se compensan (leer 4,20 como 3,20 e inventar una linea de 1,00
+  // cuadra igual de bien). Que dos lecturas independientes cometan el mismo par
+  // de errores compensados es practicamente imposible, asi que esto si lo caza.
+  // Cuesta el doble: unos 16 centimos por ticket en vez de 8.
+  dobleLectura: false,
+};
+
+export const CLAVE_LS = "cesta.apiKey";
+export const DATOS_LS = "cesta.tickets";

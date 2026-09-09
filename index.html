@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0e1116">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Cesta</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+
+<main class="envoltorio">
+  <header>
+    <h1>Cesta</h1>
+    <small id="cabResumen"></small>
+  </header>
+
+  <!-- ESCANEAR -->
+  <section id="vistaEscanear">
+    <label class="escaner" id="zonaEscaner" for="ficheroTicket">
+      <div class="texto" id="textoEscaner">
+        <span class="icono">🧾</span>
+        <span id="lemaEscaner">Toca para fotografiar el ticket</span>
+        <div class="etiqueta" style="margin-top:10px">Entero, plano y bien iluminado</div>
+      </div>
+      <div class="marco"><span></span><span></span><span></span><span></span></div>
+    </label>
+    <input type="file" id="ficheroTicket" accept="image/*">
+
+    <div class="fila" id="atajos" style="margin-top:10px"></div>
+    <button class="principal" id="botonAnalizar" disabled>Leer el ticket</button>
+    <div id="estado"></div>
+    <div id="resultado"></div>
+  </section>
+
+  <!-- INFORME -->
+  <section id="vistaInforme" class="oculto">
+    <div class="tarjeta">
+      <div class="fila" id="selectorMeses"></div>
+      <div style="margin-top:16px">
+        <div style="font-size:2.1rem;font-weight:700" id="gastoMes">—</div>
+        <div style="color:var(--suave);font-size:.9rem" id="detalleMes"></div>
+      </div>
+    </div>
+    <div class="tarjeta">
+      <h2>En qué se va</h2>
+      <div id="categorias"></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Cómo se mueven los precios</h2>
+      <div id="preciosLista"></div>
+    </div>
+  </section>
+
+  <!-- AJUSTES -->
+  <section id="vistaAjustes" class="oculto">
+    <div class="tarjeta">
+      <h2>Clave de API</h2>
+      <input type="password" id="campoClave" placeholder="sk-ant-..." autocomplete="off">
+      <button class="principal" id="botonGuardarClave">Guardar en este teléfono</button>
+      <p class="nota">Se queda en el almacenamiento local de este navegador y no
+      sale de aquí salvo hacia la propia API de Anthropic. Es lo que hace que la app
+      funcione sin servidor, y también lo que impide publicarla tal cual.</p>
+    </div>
+    <div class="tarjeta">
+      <h2>Datos</h2>
+      <div class="fila">
+        <button class="fino" id="botonExportar">Exportar JSON</button>
+        <button class="fino" id="botonVaciar">Borrar todo</button>
+      </div>
+      <p class="nota" id="notaDatos"></p>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button data-vista="Escanear" class="activo"><b>🧾</b>Escanear</button>
+  <button data-vista="Informe"><b>📊</b>Informe</button>
+  <button data-vista="Ajustes"><b>⚙️</b>Ajustes</button>
+</nav>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

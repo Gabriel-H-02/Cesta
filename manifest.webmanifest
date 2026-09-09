@@ -1,0 +1,13 @@
+{
+  "name": "Cesta",
+  "short_name": "Cesta",
+  "description": "Escanea el ticket de la compra y arma el informe de gasto.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e1116",
+  "theme_color": "#0e1116",
+  "icons": [
+    { "src": "icono.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
