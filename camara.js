@@ -14,9 +14,11 @@
 //
 // Cuando las tres se cumplen durante ESTABLES comprobaciones seguidas, dispara.
 
+import { otsu, mayorMancha, casco, esquinas } from "./documento.js";
+
 export const UMBRALES = {
-  coberturaMin: 0.18,
-  coberturaMax: 0.94,
+  coberturaMin: 0.10,
+  coberturaMax: 0.96,
   nitidez: 90,      // varianza del laplaciano sobre gris 0-255
   movimiento: 7,    // diferencia media por pixel, 0-255
   estables: 5,      // comprobaciones seguidas en verde antes de disparar
@@ -25,8 +27,10 @@ export const UMBRALES = {
 };
 
 export class Camara {
-  constructor(video, alCambiarEstado, alCapturar) {
+  constructor(video, alCambiarEstado, alCapturar, dibujo = null) {
     this.video = video;
+    this.dibujo = dibujo;          // lienzo superpuesto donde se pinta la silueta
+    this.esquinas = null;
     this.alCambiarEstado = alCambiarEstado;
     this.alCapturar = alCapturar;
     this.lienzo = document.createElement("canvas");
@@ -81,45 +85,43 @@ export class Camara {
     if (!f) return;
     const { g, an, al } = f;
 
-    // Cobertura: pixeles claramente mas brillantes que la mediana de la escena.
-    // La mediana sale de un histograma de 256 cubos, no de ordenar el fotograma:
-    // esto corre seis veces por segundo y ordenar 27.000 valores cada vez sobra.
-    const hist = new Uint32Array(256);
-    for (let i = 0; i < g.length; i++) hist[g[i]]++;
-    let acumulado = 0, mediana = 0;
-    for (let v = 0; v < 256; v++) {
-      acumulado += hist[v];
-      if (acumulado >= g.length / 2) { mediana = v; break; }
-    }
-    const corte = Math.max(mediana + 28, 118);
-    let claros = 0;
-    for (let i = 0; i < g.length; i++) if (g[i] > corte) claros++;
-    const cobertura = claros / g.length;
+    // Se busca el documento de verdad, no una mancha clara cualquiera. El
+    // umbral sale de la propia imagen (Otsu), que es lo que hace que esto
+    // funcione con luz de calle y no solo sobre un fondo negro de estudio.
+    const umbral = otsu(g);
+    const mancha = mayorMancha(g, an, al, umbral);
+    const cobertura = mancha ? mancha.n / g.length : 0;
+    const esq = mancha && cobertura >= UMBRALES.coberturaMin
+      ? esquinas(casco(mancha.puntos)) : null;
+    this.esquinas = esq;
+    this.pintarSilueta(esq, an, al);
 
-    // Nitidez: varianza del laplaciano, medida solo sobre la zona clara.
+    // Nitidez medida SOLO dentro del documento: si se midiera el fondo, la
+    // veta de una mesa contaria como enfoque y dejaria disparar con el ticket
+    // borroso.
     let suma = 0, suma2 = 0, n = 0;
     for (let y = 1; y < al - 1; y++) {
       for (let x = 1; x < an - 1; x++) {
         const i = y * an + x;
-        if (g[i] <= corte) continue;
+        if (g[i] <= umbral) continue;
         const lap = 4 * g[i] - g[i - 1] - g[i + 1] - g[i - an] - g[i + an];
         suma += lap; suma2 += lap * lap; n++;
       }
     }
     const nitidez = n > 40 ? suma2 / n - (suma / n) ** 2 : 0;
 
-    // Quietud contra el fotograma anterior.
-    let movimiento = 0;
+    let movimiento = 999;
     if (this.previo && this.previo.length === g.length) {
       let acc = 0;
       for (let i = 0; i < g.length; i += 3) acc += Math.abs(g[i] - this.previo[i]);
       movimiento = acc / (g.length / 3);
-    } else movimiento = 999;
+    }
     this.previo = g;
 
     const U = UMBRALES;
     let estado;
-    if (cobertura < U.coberturaMin) estado = { clave: "lejos", texto: "Acerca el ticket" };
+    if (!esq) estado = { clave: "buscando", texto: "Buscando el ticket" };
+    else if (cobertura < U.coberturaMin * 1.6) estado = { clave: "lejos", texto: "Acércate" };
     else if (cobertura > U.coberturaMax) estado = { clave: "cerca", texto: "Sepáralo un poco" };
     else if (movimiento > U.movimiento) estado = { clave: "movido", texto: "Mantén el pulso" };
     else if (nitidez < U.nitidez) estado = { clave: "borroso", texto: "Enfocando…" };
@@ -127,14 +129,48 @@ export class Camara {
 
     this.buenos = estado.clave === "listo" ? this.buenos + 1 : 0;
     estado.progreso = Math.min(1, this.buenos / U.estables);
-    estado.medidas = { cobertura, nitidez, movimiento };
+    estado.medidas = { cobertura, nitidez, movimiento, umbral };
     this.alCambiarEstado(estado);
 
     if (this.auto && this.buenos >= U.estables) this.disparar();
   }
 
-  get activa() {
-    return !!this.stream;
+  // La silueta que ves ajustarse al ticket mientras encuadras.
+  pintarSilueta(esq, an, al) {
+    const lienzo = this.dibujo;
+    if (!lienzo) return;
+    const v = this.video;
+    if (lienzo.width !== v.clientWidth || lienzo.height !== v.clientHeight) {
+      lienzo.width = v.clientWidth; lienzo.height = v.clientHeight;
+    }
+    const ctx = lienzo.getContext("2d");
+    ctx.clearRect(0, 0, lienzo.width, lienzo.height);
+    if (!esq) return;
+
+    // El video se pinta con object-fit: cover, asi que hay que replicar el
+    // recorte que hace el navegador o la silueta sale desplazada.
+    const escala = Math.max(lienzo.width / an, lienzo.height / al);
+    const dx = (lienzo.width - an * escala) / 2;
+    const dy = (lienzo.height - al * escala) / 2;
+    const P = esq.map(([x, y]) => [x * escala + dx, y * escala + dy]);
+
+    ctx.beginPath();
+    ctx.moveTo(...P[0]);
+    for (let i = 1; i < 4; i++) ctx.lineTo(...P[i]);
+    ctx.closePath();
+    const listo = this.buenos > 0;
+    ctx.fillStyle = listo ? "rgba(110,231,168,.16)" : "rgba(247,160,114,.10)";
+    ctx.fill();
+    ctx.strokeStyle = listo ? "#6ee7a8" : "#f7a072";
+    ctx.lineWidth = 3;
+    ctx.lineJoin = "round";
+    ctx.stroke();
+    for (const [x, y] of P) {
+      ctx.beginPath();
+      ctx.arc(x, y, 5, 0, 7);
+      ctx.fillStyle = listo ? "#6ee7a8" : "#f7a072";
+      ctx.fill();
+    }
   }
 
   // Captura a resolucion completa, no la del analisis.
@@ -148,6 +184,7 @@ export class Camara {
     l.getContext("2d").drawImage(v, 0, 0);
     const blob = await new Promise((r) => l.toBlob(r, "image/jpeg", 0.92));
     this.parar();
+    if (this.dibujo) this.dibujo.getContext("2d").clearRect(0, 0, this.dibujo.width, this.dibujo.height);
     this.alCambiarEstado({ clave: "capturada", texto: "Capturada", progreso: 1 });
     const archivo = new File([blob], "ticket.jpg", { type: "image/jpeg" });
     this.alCapturar?.(archivo);

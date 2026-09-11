@@ -6,6 +6,7 @@
 // bandas que solapan, cada trozo llega a resolucion completa.
 
 import { CONFIG } from "./config.js";
+import { otsu, mayorMancha, casco, esquinas, homografia, aplicar, tamanoSalida } from "./documento.js";
 
 function dibujar(fuente, ancho, alto, sx, sy, sAncho, sAlto) {
   const lienzo = document.createElement("canvas");
@@ -32,6 +33,80 @@ export async function cargarImagen(archivo) {
     // El objeto sigue vivo hasta que la imagen se decodifica; liberarlo despues.
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
+}
+
+// Busca el ticket dentro de la foto y lo endereza, tirando el fondo.
+// Devuelve un lienzo con solo el papel, o null si no encuentra nada que valga.
+export function enderezar(fuente) {
+  const anF = fuente.naturalWidth || fuente.width;
+  const alF = fuente.naturalHeight || fuente.height;
+
+  // La deteccion corre sobre una copia diminuta: es igual de fiable para
+  // encontrar la silueta y cuesta una fraccion.
+  const anD = 240, alD = Math.max(1, Math.round(anF ? anD * alF / anF : 1));
+  const chico = document.createElement("canvas");
+  chico.width = anD; chico.height = alD;
+  const cx = chico.getContext("2d", { willReadFrequently: true });
+  cx.drawImage(fuente, 0, 0, anD, alD);
+  const d = cx.getImageData(0, 0, anD, alD).data;
+
+  const gris = new Uint8ClampedArray(anD * alD);
+  for (let i = 0, p = 0; i < d.length; i += 4, p++)
+    gris[p] = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
+
+  const mancha = mayorMancha(gris, anD, alD, otsu(gris));
+  if (!mancha) return null;
+
+  // Una mancha diminuta no es un ticket, es un reflejo.
+  if (mancha.n < anD * alD * 0.06) return null;
+
+  const esq = esquinas(casco(mancha.puntos));
+  if (!esq) return null;
+
+  // Esquinas de vuelta a la resolucion original.
+  const k = anF / anD;
+  const grandes = esq.map(([x, y]) => [x * k, y * k]);
+
+  const { an, al } = tamanoSalida(grandes, CONFIG.anchoMax);
+  // Del rectangulo de salida al cuadrilatero de origen: se recorre el destino
+  // y se va a buscar el pixel que le toca, que es como no dejar huecos.
+  const h = homografia([[0, 0], [an, 0], [an, al], [0, al]], grandes);
+  if (!h) return null;
+
+  const origen = document.createElement("canvas");
+  origen.width = anF; origen.height = alF;
+  origen.getContext("2d", { willReadFrequently: true }).drawImage(fuente, 0, 0);
+  const src = origen.getContext("2d").getImageData(0, 0, anF, alF).data;
+
+  const salida = document.createElement("canvas");
+  salida.width = an; salida.height = al;
+  const ctxS = salida.getContext("2d");
+  const img = ctxS.createImageData(an, al);
+  const out = img.data;
+
+  for (let y = 0; y < al; y++) {
+    for (let x = 0; x < an; x++) {
+      const [sx, sy] = aplicar(h, x + 0.5, y + 0.5);
+      const x0 = Math.floor(sx), y0 = Math.floor(sy);
+      const o = (y * an + x) * 4;
+      if (x0 < 0 || y0 < 0 || x0 >= anF - 1 || y0 >= alF - 1) {
+        out[o] = out[o + 1] = out[o + 2] = 255; out[o + 3] = 255;
+        continue;
+      }
+      // Bilineal: sin esto el texto pequeno sale con dientes al girar.
+      const fx = sx - x0, fy = sy - y0;
+      const i00 = (y0 * anF + x0) * 4, i10 = i00 + 4;
+      const i01 = i00 + anF * 4, i11 = i01 + 4;
+      for (let c = 0; c < 3; c++) {
+        const arriba = src[i00 + c] * (1 - fx) + src[i10 + c] * fx;
+        const abajo = src[i01 + c] * (1 - fx) + src[i11 + c] * fx;
+        out[o + c] = arriba * (1 - fy) + abajo * fy;
+      }
+      out[o + 3] = 255;
+    }
+  }
+  ctxS.putImageData(img, 0, 0);
+  return { lienzo: salida, esquinas: grandes, cobertura: mancha.n / (anD * alD) };
 }
 
 // Devuelve { bandas: [base64...], vistaPrevia: dataURL }

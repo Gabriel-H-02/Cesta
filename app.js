@@ -1,5 +1,5 @@
 import { CLAVE_LS, DATOS_LS } from "./config.js";
-import { cargarImagen, trocear } from "./imagen.js";
+import { cargarImagen, trocear, enderezar } from "./imagen.js";
 import { analizarTicket, coste, probarClave } from "./parser.js";
 import { verificar, guardar, leerTodos, exportar, eur } from "./almacen.js";
 import { resumen, meses, mesLargo, precios, porTienda, compararTiendas } from "./informe.js";
@@ -51,8 +51,10 @@ async function procesarArchivo(archivo) {
     zona.classList.add("lleno");
     $("#textoEscaner").innerHTML = `<img src="${t.vistaPrevia}" alt="Ticket">`;
     $("#botonAnalizar").disabled = false;
-    estado("bien", `Imagen lista, ${img.naturalWidth}×${img.naturalHeight}. ${
-      t.n === 1 ? "Cabe en una banda." : `Cortada en ${t.n} bandas para no perder resolución.`}`);
+    estado("bien", `${recorte
+      ? `Ticket recortado y enderezado a ${recorte.lienzo.width}×${recorte.lienzo.height}, fondo fuera.`
+      : `No encontré los bordes del ticket, va la foto entera (${img.naturalWidth}×${img.naturalHeight}).`} ${
+      t.n === 1 ? "Cabe en una banda." : `Cortada en ${t.n} bandas.`}`);
   } catch (err) {
     estado("mal", "No se pudo leer la imagen: " + esc(err.message));
   }
@@ -63,7 +65,7 @@ const zona = $("#zonaEscaner");
 const camara = new Camara($("#video"), pintarEstadoCamara, (archivo) => {
   cerrarCamara();
   procesarArchivo(archivo);
-});
+}, $("#silueta"));
 
 function pintarEstadoCamara(e) {
   zona.dataset.estado = e.clave;
