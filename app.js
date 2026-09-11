@@ -1,9 +1,10 @@
-import { CLAVE_LS, DATOS_LS } from "./config.js";
+import { CLAVE_LS, DATOS_LS, CONFIG } from "./config.js";
 import { cargarImagen, trocear, enderezar } from "./imagen.js";
 import { analizarTicket, coste, probarClave } from "./parser.js";
 import { verificar, guardar, leerTodos, exportar, eur } from "./almacen.js";
 import { resumen, meses, mesLargo, precios, porTienda, compararTiendas } from "./informe.js";
 import { Camara } from "./camara.js";
+import { VERSION, CONSTRUIDA } from "./version.js";
 
 const $ = (s) => document.querySelector(s);
 
@@ -294,8 +295,60 @@ function pintarInforme() {
   }).join("") : '<div class="vacio">Hacen falta dos compras del mismo producto para comparar.</div>';
 }
 
+/* ---------- version ---------- */
+const fechaLarga = (iso) => new Date(iso).toLocaleString("es-ES",
+  { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+function pintarVersion() {
+  const enDesarrollo = VERSION === "desarrollo";
+  $("#version").innerHTML = `
+    <b>${esc(VERSION)}</b><br>
+    <span>${CONSTRUIDA ? "Publicada el " + fechaLarga(CONSTRUIDA)
+                       : "Servida desde tu ordenador, sin sellar"}</span><br>
+    <span>Lector: <code>${esc(CONFIG.proveedor)}</code> · Modelos: <code>${
+      esc([].concat(CONFIG.modelo[CONFIG.proveedor]).join(", "))}</code></span>`;
+  return enDesarrollo;
+}
+
+// Pregunta a la red si hay algo mas nuevo que lo que esta cargado ahora mismo.
+// La comparacion es contra el archivo publicado, no contra el cache, para que
+// no pueda decir que estas al dia cuando no lo estas.
+$("#botonActualizar").onclick = async () => {
+  const b = $("#botonActualizar");
+  const salida = $("#resultadoActualizar");
+  b.disabled = true; b.textContent = "Comprobando…";
+  try {
+    const r = await fetch(`version.js?t=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) throw new Error(`el servidor respondió ${r.status}`);
+    const txt = await r.text();
+    const vRemota = txt.match(/VERSION = "([^"]*)"/)?.[1];
+    const fRemota = txt.match(/CONSTRUIDA = "([^"]*)"/)?.[1];
+
+    if (vRemota === VERSION && fRemota === CONSTRUIDA) {
+      salida.innerHTML = `<div class="estado bien"><div>Estás en la última versión.</div></div>`;
+    } else {
+      salida.innerHTML = `<div class="estado trabajando"><div>Hay una versión nueva
+        (<b>${esc(vRemota || "?")}</b>${fRemota ? ", del " + esc(fechaLarga(fRemota)) : ""}).
+        Instalando…</div></div>`;
+      const reg = await navigator.serviceWorker?.getRegistration();
+      if (reg) {
+        await reg.update();
+        reg.waiting?.postMessage({ tipo: "saltar" });
+        navigator.serviceWorker.addEventListener("controllerchange", () => location.reload(), { once: true });
+        setTimeout(() => location.reload(true), 2500);
+      } else {
+        location.reload(true);
+      }
+    }
+  } catch (err) {
+    salida.innerHTML = `<div class="estado mal"><div>No se pudo comprobar: ${esc(err.message)}</div></div>`;
+  }
+  b.disabled = false; b.textContent = "Buscar actualización";
+};
+
 /* ---------- ajustes ---------- */
 function pintarAjustes() {
+  pintarVersion();
   $("#campoClave").value = localStorage.getItem(CLAVE_LS) || "";
   const t = leerTodos();
   $("#notaDatos").textContent = t.length
