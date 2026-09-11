@@ -14,7 +14,7 @@
 //
 // Cuando las tres se cumplen durante ESTABLES comprobaciones seguidas, dispara.
 
-import { otsu, mayorMancha, casco, esquinas } from "./documento.js";
+import { mascaraPapel, mayorMancha, casco, esquinas, plausible } from "./documento.js";
 
 export const UMBRALES = {
   coberturaMin: 0.10,
@@ -65,7 +65,8 @@ export class Camara {
     this.video.srcObject = null;
   }
 
-  // Gris reducido del fotograma actual.
+  // Fotograma reducido: se devuelven los pixeles con color, porque la
+  // saturacion es lo que distingue el papel de la mano.
   gris() {
     const v = this.video;
     if (!v.videoWidth) return null;
@@ -77,23 +78,24 @@ export class Camara {
     const g = new Uint8ClampedArray(an * al);
     for (let i = 0, p = 0; i < d.length; i += 4, p++)
       g[p] = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
-    return { g, an, al };
+    return { g, rgba: d, an, al };
   }
 
   mirar() {
     const f = this.gris();
     if (!f) return;
-    const { g, an, al } = f;
+    const { g, rgba, an, al } = f;
 
-    // Se busca el documento de verdad, no una mancha clara cualquiera. El
-    // umbral sale de la propia imagen (Otsu), que es lo que hace que esto
-    // funcione con luz de calle y no solo sobre un fondo negro de estudio.
-    const umbral = otsu(g);
-    const mancha = mayorMancha(g, an, al, umbral);
+    // Papel = muy claro Y poco saturado. La mano pasa cualquier umbral de
+    // brillo, asi que sin la saturacion la mancha se come los dedos.
+    const { mascara, umbral } = mascaraPapel(rgba, an, al);
+    const mancha = mayorMancha(mascara, an, al, 0);
     const cobertura = mancha ? mancha.n / g.length : 0;
-    const esq = mancha && cobertura >= UMBRALES.coberturaMin
-      ? esquinas(casco(mancha.puntos)) : null;
+    const bruto = mancha ? esquinas(casco(mancha.puntos)) : null;
+    const juicio = plausible(bruto, an, al, cobertura);
+    const esq = juicio.ok ? bruto : null;
     this.esquinas = esq;
+    this.motivo = juicio.ok ? null : juicio.motivo;
     this.pintarSilueta(esq, an, al);
 
     // Nitidez medida SOLO dentro del documento: si se midiera el fondo, la
@@ -120,7 +122,9 @@ export class Camara {
 
     const U = UMBRALES;
     let estado;
-    if (!esq) estado = { clave: "buscando", texto: "Buscando el ticket" };
+    if (!esq) estado = { clave: "buscando",
+      texto: this.motivo === "la silueta se sale del encuadre"
+        ? "Aparta el ticket del fondo claro" : "Buscando el ticket" };
     else if (cobertura < U.coberturaMin * 1.6) estado = { clave: "lejos", texto: "Acércate" };
     else if (cobertura > U.coberturaMax) estado = { clave: "cerca", texto: "Sepáralo un poco" };
     else if (movimiento > U.movimiento) estado = { clave: "movido", texto: "Mantén el pulso" };

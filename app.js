@@ -52,9 +52,9 @@ async function procesarArchivo(archivo) {
     zona.classList.add("lleno");
     $("#textoEscaner").innerHTML = `<img src="${t.vistaPrevia}" alt="Ticket">`;
     $("#botonAnalizar").disabled = false;
-    estado("bien", `${recorte
+    estado("bien", `${recorte?.lienzo
       ? `Ticket recortado y enderezado a ${recorte.lienzo.width}×${recorte.lienzo.height}, fondo fuera.`
-      : `No encontré los bordes del ticket, va la foto entera (${img.naturalWidth}×${img.naturalHeight}).`} ${
+      : `Va la foto entera (${img.naturalWidth}×${img.naturalHeight}): ${esc(recorte?.fallo || "sin bordes claros")}.`} ${
       t.n === 1 ? "Cabe en una banda." : `Cortada en ${t.n} bandas.`}`);
   } catch (err) {
     estado("mal", "No se pudo leer la imagen: " + esc(err.message));

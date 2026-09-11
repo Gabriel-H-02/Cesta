@@ -6,7 +6,7 @@
 // bandas que solapan, cada trozo llega a resolucion completa.
 
 import { CONFIG } from "./config.js";
-import { otsu, mayorMancha, casco, esquinas, homografia, aplicar, tamanoSalida } from "./documento.js";
+import { mascaraPapel, mayorMancha, casco, esquinas, plausible, homografia, aplicar, tamanoSalida } from "./documento.js";
 
 function dibujar(fuente, ancho, alto, sx, sy, sAncho, sAlto) {
   const lienzo = document.createElement("canvas");
@@ -50,18 +50,14 @@ export function enderezar(fuente) {
   cx.drawImage(fuente, 0, 0, anD, alD);
   const d = cx.getImageData(0, 0, anD, alD).data;
 
-  const gris = new Uint8ClampedArray(anD * alD);
-  for (let i = 0, p = 0; i < d.length; i += 4, p++)
-    gris[p] = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
+  const { mascara } = mascaraPapel(d, anD, alD);
+  const mancha = mayorMancha(mascara, anD, alD, 0);
+  const cobertura = mancha ? mancha.n / (anD * alD) : 0;
+  const esq = mancha ? esquinas(casco(mancha.puntos)) : null;
 
-  const mancha = mayorMancha(gris, anD, alD, otsu(gris));
-  if (!mancha) return null;
-
-  // Una mancha diminuta no es un ticket, es un reflejo.
-  if (mancha.n < anD * alD * 0.06) return null;
-
-  const esq = esquinas(casco(mancha.puntos));
-  if (!esq) return null;
+  // Recortar mal es peor que no recortar.
+  const juicio = plausible(esq, anD, alD, cobertura);
+  if (!juicio.ok) return { fallo: juicio.motivo };
 
   // Esquinas de vuelta a la resolucion original.
   const k = anF / anD;
@@ -71,7 +67,7 @@ export function enderezar(fuente) {
   // Del rectangulo de salida al cuadrilatero de origen: se recorre el destino
   // y se va a buscar el pixel que le toca, que es como no dejar huecos.
   const h = homografia([[0, 0], [an, 0], [an, al], [0, al]], grandes);
-  if (!h) return null;
+  if (!h) return { fallo: "no se pudo enderezar la perspectiva" };
 
   const origen = document.createElement("canvas");
   origen.width = anF; origen.height = alF;
@@ -106,7 +102,7 @@ export function enderezar(fuente) {
     }
   }
   ctxS.putImageData(img, 0, 0);
-  return { lienzo: salida, esquinas: grandes, cobertura: mancha.n / (anD * alD) };
+  return { lienzo: salida, esquinas: grandes, cobertura };
 }
 
 // Devuelve { bandas: [base64...], vistaPrevia: dataURL }

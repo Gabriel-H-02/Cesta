@@ -4,9 +4,12 @@
 // Sin OpenCV. Son ocho megas para el movil y aqui basta una tuberia clasica que
 // cabe en este archivo:
 //
-//   1. Otsu     separa papel de fondo con un umbral calculado de la propia foto,
-//               no fijo. Este es el cambio que hace que funcione en la calle:
-//               un umbral fijo solo acierta sobre fondo negro de estudio.
+//   0. Color    el papel es blanco: muy claro Y poco saturado. La piel de la mano
+//               es naranja y pasa cualquier umbral de brillo, asi que sin mirar
+//               la saturacion la mancha se come los dedos.
+//   1. Otsu     dos veces. La primera separa claro de oscuro; la segunda, dentro
+//               de lo claro, separa el papel del aluminio y de la tela beige,
+//               que tambien son neutros pero menos brillantes.
 //   2. Mancha   la mayor region clara conectada. El ticket es la mancha grande;
 //               los reflejos y las baldosas son manchas pequenas.
 //   3. Casco    envolvente convexa de esa mancha, para tener su silueta.
@@ -35,6 +38,31 @@ export function otsu(gris) {
     if (entre > mejor) { mejor = entre; umbral = v; }
   }
   return umbral;
+}
+
+// ---------- 1 bis. Mascara de papel a partir de pixeles RGBA ----------
+// Devuelve una mascara 0/255 y el umbral final, listo para mayorMancha.
+export function mascaraPapel(rgba, an, al, satMax = 60) {
+  const n = an * al;
+  const brillo = new Uint8ClampedArray(n);
+  const sat = new Uint8ClampedArray(n);
+  for (let p = 0; p < n; p++) {
+    const r = rgba[p * 4], g = rgba[p * 4 + 1], b = rgba[p * 4 + 2];
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    brillo[p] = max;
+    sat[p] = max ? (((max - min) * 255) / max) | 0 : 0;
+  }
+
+  const u1 = otsu(brillo);
+  // Segundo Otsu solo sobre los candidatos a papel. Sin esto, el aluminio de un
+  // portatil o una silla clara entran en la mancha y se fusionan con el ticket.
+  const claros = [];
+  for (let p = 0; p < n; p++) if (brillo[p] > u1 && sat[p] < satMax) claros.push(brillo[p]);
+  const u2 = claros.length > 50 ? otsu(new Uint8ClampedArray(claros)) : u1;
+
+  const m = new Uint8ClampedArray(n);
+  for (let p = 0; p < n; p++) m[p] = brillo[p] > u2 && sat[p] < satMax ? 255 : 0;
+  return { mascara: m, umbral: u2, brillo };
 }
 
 // ---------- 2. Mayor region clara conectada ----------
@@ -141,4 +169,32 @@ export function tamanoSalida([si, sd, id, ii], anchoMax) {
   const alto = Math.max(dist(si, ii), dist(sd, id));
   const an = Math.min(anchoMax, Math.round(ancho));
   return { an, al: Math.max(1, Math.round(an * alto / ancho)) };
+}
+
+
+// ---------- 6. Saber cuando NO se ha encontrado el ticket ----------
+// Recortar mal es peor que no recortar: si la mancha se fusiona con el fondo, el
+// recorte tira media hoja. Ante la duda se manda la foto entera, que el modelo
+// aun puede leer. Estas tres condiciones cazan los casos reales que fallaban.
+export function plausible(esq, an, al, cobertura) {
+  if (!esq) return { ok: false, motivo: "no encontré ningún documento" };
+
+  const xs = esq.map((p) => p[0]), ys = esq.map((p) => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+
+  // Tocar el borde del encuadre delata que la mancha se ha ido por la foto:
+  // es lo que pasa cuando el ticket esta sobre una superficie clara y grande.
+  const margen = 3;
+  if (x0 <= margen || y0 <= margen || x1 >= an - 1 - margen || y1 >= al - 1 - margen)
+    return { ok: false, motivo: "la silueta se sale del encuadre" };
+
+  // Un ticket es una tira: claramente mas alto que ancho.
+  const prop = (y1 - y0) / Math.max(1, x1 - x0);
+  if (prop < 1.5) return { ok: false, motivo: `la silueta sale demasiado ancha (${prop.toFixed(1)})` };
+
+  if (cobertura > 0.75) return { ok: false, motivo: "la silueta ocupa casi toda la foto" };
+  if (cobertura < 0.05) return { ok: false, motivo: "la silueta es demasiado pequeña" };
+
+  return { ok: true, proporcion: prop };
 }

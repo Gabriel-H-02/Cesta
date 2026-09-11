@@ -68,6 +68,30 @@ del mismo ticket, de arriba abajo, y se solapan entre si a proposito. Las lineas
 aparezcan en dos bandas son la misma linea: cuentala UNA sola vez. Reconstruye el
 ticket entero antes de escribir nada.
 
+EL ERROR MAS PELIGROSO: EMPAREJAR MAL DESCRIPCION Y PRECIO
+En una foto de un ticket curvado o hecha en angulo, la columna de importes
+aparece visualmente DESPLAZADA hacia arriba o hacia abajo respecto a la de
+descripciones. Si emparejas por la altura aparente de cada linea, asignas a cada
+producto el precio del de al lado. El total sigue cuadrando, asi que este error
+NO lo caza ninguna comprobacion aritmetica: solo lo evitas leyendo con cuidado.
+
+Regla: empareja por ORDEN, no por altura. El primer importe de la columna es del
+primer producto, el segundo del segundo, y asi. Cuenta antes de escribir: tiene
+que haber exactamente un importe por producto. Si te salen mas importes que
+productos, o al reves, has metido en la cuenta una fila que no es un producto.
+
+FILAS QUE NO SON PRODUCTOS
+La cabecera 'Descripcion / P. Unit / Imp.(E)'. El TOTAL. La forma de pago. El
+desglose de IVA. Los datos de la tarjeta. Ninguna de esas entra en 'lineas'.
+
+ARTICULOS A PESO
+Ocupan DOS filas y siguen siendo UN solo producto:
+    1 BATATA GRANEL
+      1,168 kg    3,35 E/kg    3,91
+El importe de la segunda fila pertenece al producto nombrado arriba. En ese caso
+peso_kg = 1.168, precio_unit = 3.35, importe = 3.91, y no se crea un segundo
+producto llamado '1,168 kg'.
+
 COMO LEER LAS LINEAS
 Los formatos varian mucho. Lo habitual es cantidad, descripcion y a la derecha uno o
 dos numeros: el precio unitario y el importe de la linea. Cuando solo hay un numero,
