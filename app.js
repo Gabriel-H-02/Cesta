@@ -1,6 +1,6 @@
 import { CLAVE_LS, DATOS_LS } from "./config.js";
 import { cargarImagen, trocear } from "./imagen.js";
-import { analizarTicket, coste } from "./parser.js";
+import { analizarTicket, coste, probarClave } from "./parser.js";
 import { verificar, guardar, leerTodos, exportar, eur } from "./almacen.js";
 import { resumen, meses, mesLargo, precios, porTienda, compararTiendas } from "./informe.js";
 import { Camara } from "./camara.js";
@@ -143,12 +143,31 @@ if (["localhost", "127.0.0.1"].includes(location.hostname) || location.hostname.
 $("#botonAnalizar").addEventListener("click", async () => {
   if (!bandas) return;
   $("#botonAnalizar").disabled = true;
-  estado("trabajando", "Leyendo el ticket. Suele tardar entre veinte segundos y un minuto.");
+  const pesoKB = Math.round(bandas.reduce((s, b) => s + b.length, 0) * 0.75 / 1024);
+  const t0 = performance.now();
+  const reloj = setInterval(() => {
+    const s = Math.round((performance.now() - t0) / 1000);
+    const el = document.querySelector("#estado .estado div:last-child");
+    if (el) el.innerHTML = `${el.dataset.base || ""} · ${s}s`;
+  }, 1000);
+  const avisar = (fase) => {
+    const textos = {
+      subiendo: `Enviando ${bandas.length} bandas, ${pesoKB} KB`,
+      leyendo: "Enviado. Google está leyendo el ticket",
+    };
+    estado("trabajando", textos[fase] || fase);
+    const el = document.querySelector("#estado .estado div:last-child");
+    if (el) el.dataset.base = textos[fase] || fase;
+  };
+
+  avisar("subiendo");
   try {
-    const r = await analizarTicket(bandas);
+    const r = await analizarTicket(bandas, avisar);
+    clearInterval(reloj);
     ultimo = r.datos;
     pintarTicket(r.datos, r.uso, r);
   } catch (err) {
+    clearInterval(reloj);
     estado("mal", esc(err.message));
     $("#botonAnalizar").disabled = false;
   }
@@ -184,7 +203,7 @@ function pintarTicket(d, uso, extra = {}) {
       <button class="principal" id="botonGuardar">
         ${limpio ? "Guardar" : "Guardar de todas formas"}
       </button>
-      <p class="nota">${d.lineas.length} líneas${coste(uso) === 0 ? " · lectura gratuita" : uso ? ` · ${(coste(uso) * 100).toFixed(1)} céntimos` : ""}<br>
+      <p class="nota">${d.lineas.length} líneas${extra.segundos ? ` · ${extra.segundos}s` : ""}${coste(uso) === 0 ? " · lectura gratuita" : uso ? ` · ${(coste(uso) * 100).toFixed(1)} céntimos` : ""}<br>
         Compara las líneas con la foto antes de guardar: la suma de control caza
         omisiones y dígitos mal leídos, pero no dos errores que se compensen.</p>
     </div>`;
@@ -283,6 +302,19 @@ $("#botonGuardarClave").onclick = () => {
   v ? localStorage.setItem(CLAVE_LS, v) : localStorage.removeItem(CLAVE_LS);
   $("#botonGuardarClave").textContent = "Guardada";
   setTimeout(() => ($("#botonGuardarClave").textContent = "Guardar en este teléfono"), 1600);
+};
+$("#botonProbar").onclick = async () => {
+  const b = $("#botonProbar");
+  b.disabled = true; b.textContent = "Probando…";
+  const salida = $("#resultadoPrueba");
+  try {
+    const r = await probarClave();
+    salida.innerHTML = `<div class="estado bien"><div>La clave funciona. Google respondió «${esc(r.texto)}» en ${r.segundos}s.<br>
+      Si la lectura de tickets falla igualmente, el problema son las imágenes o el modelo, no la clave ni la red.</div></div>`;
+  } catch (err) {
+    salida.innerHTML = `<div class="estado mal"><div>${esc(err.message)}</div></div>`;
+  }
+  b.disabled = false; b.textContent = "Probar la clave";
 };
 $("#botonExportar").onclick = exportar;
 $("#botonVaciar").onclick = () => {

@@ -18,7 +18,7 @@ function dibujar(fuente, ancho, alto, sx, sy, sAncho, sAlto) {
 }
 
 function aBase64(lienzo) {
-  return lienzo.toDataURL("image/jpeg", 0.85).split(",")[1];
+  return lienzo.toDataURL("image/jpeg", CONFIG.calidadJpeg).split(",")[1];
 }
 
 export async function cargarImagen(archivo) {

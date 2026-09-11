@@ -45,37 +45,79 @@ function textoDe(r) {
   return trozos.join("");
 }
 
-async function viaGemini(bandas) {
+// Una peticion a Gemini con tiempo maximo y mensajes de error que dicen algo.
+async function pedirAGemini(cuerpo, avisar = () => {}, espera = CONFIG.esperaMax) {
   const apiKey = localStorage.getItem(CLAVE_LS);
   if (!apiKey) throw new Error("Falta la clave de Google AI Studio. Abre los ajustes.");
 
+  const corte = new AbortController();
+  const reloj = setTimeout(() => corte.abort(), espera);
+  const t0 = performance.now();
+
+  let r;
+  try {
+    avisar("subiendo");
+    r = await fetch(GEMINI, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      body: JSON.stringify(cuerpo),
+      signal: corte.signal,
+    });
+    avisar("leyendo");
+  } catch (e) {
+    clearTimeout(reloj);
+    if (e.name === "AbortError")
+      throw new Error(`Google no respondió en ${Math.round(espera / 1000)} segundos. Puede ser la cobertura, o que el ticket sea muy largo. Prueba otra vez con mejor señal.`);
+    throw new Error("No se pudo conectar con Google. Revisa la conexión.");
+  } finally {
+    clearTimeout(reloj);
+  }
+
+  const texto = await r.text();
+  const segundos = ((performance.now() - t0) / 1000).toFixed(1);
+
+  if (!r.ok) {
+    if (r.status === 429) throw new Error("Cuota gratuita agotada por hoy. Vuelve a intentarlo mañana.");
+    if (r.status === 401) throw new Error(`La clave no autentica (401). Es un problema conocido de algunas claves nuevas de AI Studio. ${texto.slice(0, 140)}`);
+    if (r.status === 403) throw new Error(`Google rechaza la clave (403). Revisa que no le pusieras restricciones. ${texto.slice(0, 140)}`);
+    if (r.status === 400) throw new Error(`Petición rechazada (400). ${texto.slice(0, 220)}`);
+    throw new Error(`Gemini respondió ${r.status} tras ${segundos}s. ${texto.slice(0, 200)}`);
+  }
+  return { json: JSON.parse(texto), segundos };
+}
+
+async function viaGemini(bandas, avisar) {
   const entrada = bandas.map((b) => ({ type: "image", data: b, mime_type: "image/jpeg" }));
   entrada.push({ type: "text", text: instrucciones(bandas.length) });
 
-  const r = await fetch(GEMINI, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-    body: JSON.stringify({
-      model: CONFIG.modelo.gemini,
-      system_instruction: SISTEMA,
-      input: entrada,
-      response_format: { type: "text", mime_type: "application/json", schema: ESQUEMA },
-    }),
-  });
+  const { json, segundos } = await pedirAGemini({
+    model: CONFIG.modelo.gemini,
+    system_instruction: SISTEMA,
+    input: entrada,
+    generation_config: { thinking_level: CONFIG.razonamiento },
+    response_format: { type: "text", mime_type: "application/json", schema: ESQUEMA },
+  }, avisar);
 
-  if (!r.ok) {
-    const cuerpo = await r.text();
-    if (r.status === 429)
-      throw new Error("Has agotado la cuota gratuita de hoy. Vuelve a intentarlo mañana.");
-    if (r.status === 400 && cuerpo.includes("API key"))
-      throw new Error("La clave no es válida. Revísala en Ajustes.");
-    throw new Error(`Gemini respondió ${r.status}. ${cuerpo.slice(0, 200)}`);
-  }
+  const texto = textoDe(json);
+  if (!texto)
+    throw new Error("Gemini respondió, pero no encuentro el texto en su respuesta. Claves recibidas: " + Object.keys(json).join(", "));
 
-  const datos = await r.json();
-  const texto = textoDe(datos);
-  if (!texto) throw new Error("Gemini no devolvió texto que se pueda leer.");
-  return { datos: JSON.parse(texto), uso: datos.usage ?? null, gratis: true };
+  let datos;
+  try { datos = JSON.parse(texto); }
+  catch { throw new Error("Gemini devolvió algo que no es JSON válido: " + texto.slice(0, 160)); }
+
+  return { datos, uso: json.usage ?? null, gratis: true, segundos };
+}
+
+// Diagnostico: la llamada mas pequena posible, sin imagenes. Separa un problema
+// de clave o de red de uno de imagenes pesadas o de modelo lento.
+export async function probarClave() {
+  const t0 = performance.now();
+  const { json } = await pedirAGemini({
+    model: CONFIG.modelo.gemini,
+    input: "Responde unicamente con la palabra: bien",
+  }, () => {}, 30000);
+  return { texto: textoDe(json).trim(), segundos: ((performance.now() - t0) / 1000).toFixed(1) };
 }
 
 // El SDK son 175 KB del CDN. Se carga solo si de verdad se usa Claude, para que
@@ -137,15 +179,15 @@ function discrepancias(a, b) {
   return fuera;
 }
 
-async function unaLectura(bandas) {
+async function unaLectura(bandas, avisar) {
   if (CONFIG.modo === "servidor") return viaServidor(bandas);
-  return CONFIG.proveedor === "gemini" ? viaGemini(bandas) : viaAnthropic(bandas);
+  return CONFIG.proveedor === "gemini" ? viaGemini(bandas, avisar) : viaAnthropic(bandas);
 }
 
-export async function analizarTicket(bandas) {
-  if (!CONFIG.dobleLectura) return unaLectura(bandas);
+export async function analizarTicket(bandas, avisar = () => {}) {
+  if (!CONFIG.dobleLectura) return unaLectura(bandas, avisar);
 
-  const [a, b] = await Promise.all([unaLectura(bandas), unaLectura(bandas)]);
+  const [a, b] = await Promise.all([unaLectura(bandas, avisar), unaLectura(bandas, avisar)]);
   const uso = {
     input_tokens: (a.uso?.input_tokens || 0) + (b.uso?.input_tokens || 0),
     output_tokens: (a.uso?.output_tokens || 0) + (b.uso?.output_tokens || 0),
