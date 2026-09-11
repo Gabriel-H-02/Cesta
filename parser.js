@@ -46,6 +46,12 @@ function textoDe(r) {
 }
 
 // Una peticion a Gemini con tiempo maximo y mensajes de error que dicen algo.
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Fallos de los que merece la pena reintentar con el mismo modelo, frente a los
+// que piden cambiar de modelo o rendirse.
+const SATURADO = new Set([500, 502, 503, 504]);
+
 async function pedirAGemini(cuerpo, avisar = () => {}, espera = CONFIG.esperaMax) {
   const apiKey = localStorage.getItem(CLAVE_LS);
   if (!apiKey) throw new Error("Falta la clave de Google AI Studio. Abre los ajustes.");
@@ -77,26 +83,63 @@ async function pedirAGemini(cuerpo, avisar = () => {}, espera = CONFIG.esperaMax
   const segundos = ((performance.now() - t0) / 1000).toFixed(1);
 
   if (!r.ok) {
-    if (r.status === 429) throw new Error("Cuota gratuita agotada por hoy. Vuelve a intentarlo mañana.");
-    if (r.status === 401) throw new Error(`La clave no autentica (401). Es un problema conocido de algunas claves nuevas de AI Studio. ${texto.slice(0, 140)}`);
-    if (r.status === 403) throw new Error(`Google rechaza la clave (403). Revisa que no le pusieras restricciones. ${texto.slice(0, 140)}`);
-    if (r.status === 400) throw new Error(`Petición rechazada (400). ${texto.slice(0, 220)}`);
-    throw new Error(`Gemini respondió ${r.status} tras ${segundos}s. ${texto.slice(0, 200)}`);
+    const e = new Error();
+    e.estado = r.status;
+    e.cuerpo = texto;
+    if (r.status === 429) {
+      // Puede ser el limite por minuto o el del dia. La respuesta no siempre lo
+      // dice, asi que no se afirma cual es.
+      e.message = "Límite de peticiones alcanzado en este modelo.";
+      throw e;
+    }
+    if (r.status === 401) e.message = `La clave no autentica (401). Es un problema conocido de algunas claves nuevas de AI Studio. ${texto.slice(0, 140)}`;
+    else if (r.status === 403) e.message = `Google rechaza la clave (403). ${texto.slice(0, 140)}`;
+    else if (r.status === 404) e.message = "Ese modelo no existe o no está disponible para tu cuenta.";
+    else if (r.status === 400) e.message = `Petición rechazada (400). ${texto.slice(0, 220)}`;
+    else if (SATURADO.has(r.status)) e.message = `El modelo está saturado ahora mismo (${r.status}).`;
+    else e.message = `Gemini respondió ${r.status} tras ${segundos}s. ${texto.slice(0, 200)}`;
+    throw e;
   }
   return { json: JSON.parse(texto), segundos };
+}
+
+// Recorre la cadena de modelos. Con un modelo saturado reintenta una vez tras
+// una pausa, porque Google dice que esos picos son temporales; si sigue caido,
+// o no hay cuota, o no existe, baja al siguiente.
+async function conCadena(construir, avisar) {
+  const cadena = [].concat(CONFIG.modelo.gemini);
+  let ultimo;
+  for (let i = 0; i < cadena.length; i++) {
+    const modelo = cadena[i];
+    for (let intento = 0; intento < 2; intento++) {
+      try {
+        avisar(intento || i ? `probando ${modelo}` : "subiendo");
+        const r = await pedirAGemini(construir(modelo), avisar);
+        return { ...r, modelo };
+      } catch (e) {
+        ultimo = e;
+        const saturado = SATURADO.has(e.estado);
+        if (saturado && intento === 0) { await esperar(2500); continue; }
+        if (saturado || e.estado === 429 || e.estado === 404) break;  // siguiente modelo
+        throw e;                                                      // clave, red, peticion: no insistir
+      }
+    }
+  }
+  ultimo.message = `Ningún modelo disponible. Probé ${cadena.join(", ")}. Último error: ${ultimo.message}`;
+  throw ultimo;
 }
 
 async function viaGemini(bandas, avisar) {
   const entrada = bandas.map((b) => ({ type: "image", data: b, mime_type: "image/jpeg" }));
   entrada.push({ type: "text", text: instrucciones(bandas.length) });
 
-  const { json, segundos } = await pedirAGemini({
-    model: CONFIG.modelo.gemini,
+  const { json, segundos, modelo } = await conCadena((model) => ({
+    model,
     system_instruction: SISTEMA,
     input: entrada,
     generation_config: { thinking_level: CONFIG.razonamiento },
     response_format: { type: "text", mime_type: "application/json", schema: ESQUEMA },
-  }, avisar);
+  }), avisar);
 
   const texto = textoDe(json);
   if (!texto)
@@ -106,18 +149,19 @@ async function viaGemini(bandas, avisar) {
   try { datos = JSON.parse(texto); }
   catch { throw new Error("Gemini devolvió algo que no es JSON válido: " + texto.slice(0, 160)); }
 
-  return { datos, uso: json.usage ?? null, gratis: true, segundos };
+  return { datos, uso: json.usage ?? null, gratis: true, segundos, modelo };
 }
 
 // Diagnostico: la llamada mas pequena posible, sin imagenes. Separa un problema
 // de clave o de red de uno de imagenes pesadas o de modelo lento.
 export async function probarClave() {
   const t0 = performance.now();
-  const { json } = await pedirAGemini({
-    model: CONFIG.modelo.gemini,
+  const { json, modelo } = await conCadena((model) => ({
+    model,
     input: "Responde unicamente con la palabra: bien",
-  }, () => {}, 30000);
-  return { texto: textoDe(json).trim(), segundos: ((performance.now() - t0) / 1000).toFixed(1) };
+  }), () => {});
+  return { texto: textoDe(json).trim(), modelo,
+           segundos: ((performance.now() - t0) / 1000).toFixed(1) };
 }
 
 // El SDK son 175 KB del CDN. Se carga solo si de verdad se usa Claude, para que

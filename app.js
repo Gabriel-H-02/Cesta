@@ -155,9 +155,12 @@ $("#botonAnalizar").addEventListener("click", async () => {
       subiendo: `Enviando ${bandas.length} bandas, ${pesoKB} KB`,
       leyendo: "Enviado. Google está leyendo el ticket",
     };
-    estado("trabajando", textos[fase] || fase);
+    const t = textos[fase] || (fase.startsWith("probando")
+      ? `El modelo anterior no estaba disponible. ${esc(fase)}`
+      : esc(fase));
+    estado("trabajando", t);
     const el = document.querySelector("#estado .estado div:last-child");
-    if (el) el.dataset.base = textos[fase] || fase;
+    if (el) el.dataset.base = t;
   };
 
   avisar("subiendo");
@@ -203,7 +206,7 @@ function pintarTicket(d, uso, extra = {}) {
       <button class="principal" id="botonGuardar">
         ${limpio ? "Guardar" : "Guardar de todas formas"}
       </button>
-      <p class="nota">${d.lineas.length} líneas${extra.segundos ? ` · ${extra.segundos}s` : ""}${coste(uso) === 0 ? " · lectura gratuita" : uso ? ` · ${(coste(uso) * 100).toFixed(1)} céntimos` : ""}<br>
+      <p class="nota">${d.lineas.length} líneas${extra.segundos ? ` · ${extra.segundos}s` : ""}${extra.modelo ? ` · ${esc(extra.modelo)}` : ""}${coste(uso) === 0 ? " · lectura gratuita" : uso ? ` · ${(coste(uso) * 100).toFixed(1)} céntimos` : ""}<br>
         Compara las líneas con la foto antes de guardar: la suma de control caza
         omisiones y dígitos mal leídos, pero no dos errores que se compensen.</p>
     </div>`;
@@ -309,7 +312,7 @@ $("#botonProbar").onclick = async () => {
   const salida = $("#resultadoPrueba");
   try {
     const r = await probarClave();
-    salida.innerHTML = `<div class="estado bien"><div>La clave funciona. Google respondió «${esc(r.texto)}» en ${r.segundos}s.<br>
+    salida.innerHTML = `<div class="estado bien"><div>La clave funciona. Respondió «${esc(r.texto)}» en ${r.segundos}s usando <b>${esc(r.modelo)}</b>.<br>
       Si la lectura de tickets falla igualmente, el problema son las imágenes o el modelo, no la clave ni la red.</div></div>`;
   } catch (err) {
     salida.innerHTML = `<div class="estado mal"><div>${esc(err.message)}</div></div>`;

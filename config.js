@@ -10,7 +10,17 @@ export const CONFIG = {
   //   'anthropic' Claude. Mejor lector, pero se paga por uso.
   // Se cambia solo aqui: el resto de la app no sabe quien hay detras.
   proveedor: "gemini",
-  modelo: { gemini: "gemini-3.8-flash", anthropic: "claude-opus-5" },
+  // Cadena de modelos, en orden. Se prueba el primero y se baja al siguiente si
+  // viene saturado, sin cuota o sin existir.
+  //
+  // El de moda NO va el primero a proposito: gemini-3.8-flash es el modelo
+  // estrella, se satura (500) y su cuota gratuita es minima. Los de una
+  // generacion atras y los 'lite' estan mucho mas libres y para leer un ticket
+  // dan de sobra, porque las cuentas no se las creemos: las comprobamos aqui.
+  modelo: {
+    gemini: ["gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"],
+    anthropic: "claude-opus-5",
+  },
 
   modo: "directo",
   endpoint: "/api/ticket",   // solo se usa en modo 'servidor'
