@@ -120,3 +120,16 @@ p.nota{color:var(--tenue);font-size:.85rem;margin:10px 0 0}
 .version b{font-size:1.5rem;font-weight:700}
 .version span{color:var(--tenue);font-size:.85rem}
 .version code{background:var(--panel2);border-radius:5px;padding:1px 6px;font-size:.8rem}
+
+/* Categorias desplegables */
+.barra.pulsable{cursor:pointer;border-radius:10px;margin:0 -8px 4px;padding:8px;
+  transition:background .15s}
+.barra.pulsable:hover{background:var(--panel2)}
+.barra.pulsable .cab span:first-child::after{content:"›";display:inline-block;
+  margin-left:6px;color:var(--tenue);transition:transform .18s}
+.barra.abierta .cab span:first-child::after{transform:rotate(90deg)}
+.detalle{margin:2px 0 14px;padding:10px 12px;background:var(--panel2);border-radius:10px}
+.detalle table{font-size:.88rem}
+.detalle td{border-bottom:1px solid var(--borde);padding:7px 4px}
+.detalle tr:last-child td{border-bottom:0}
+.detalle .sub{display:block;color:var(--tenue);font-size:.76rem;margin-top:2px}

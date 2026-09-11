@@ -34,6 +34,31 @@ export function meses() {
   return [...new Set(leerTodos().map((t) => mesDe(t.fecha)))].sort().reverse();
 }
 
+// Lo que hay dentro de una categoría: cuánto va a cada producto, cuántas veces
+// lo has comprado y a cómo salió la última vez.
+export function porProducto(mes, categoria) {
+  const { lineas } = resumen(mes);
+  const por = {};
+  for (const l of lineas) {
+    if (categoria && l.categoria !== categoria) continue;
+    const p = (por[l.producto] ||= {
+      producto: l.producto, importe: 0, unidades: 0, veces: 0,
+      unidad: l.unidad_norm, ultimoPrecio: null, ultimaFecha: "",
+    });
+    p.importe += l.importe;
+    p.unidades += l.cantidad || 1;
+    p.veces++;
+    if (l.fecha > p.ultimaFecha) {
+      p.ultimaFecha = l.fecha;
+      const cant = l.cantidad_norm || l.peso_kg;
+      p.ultimoPrecio = cant ? l.importe / ((l.cantidad || 1) * cant) : null;
+    }
+  }
+  return Object.values(por).sort((a, b) => b.importe - a.importe);
+}
+
+export const NOMBRE_CATEGORIA = (c) => NOMBRES[c] || c;
+
 // Gasto por cadena. Sale del campo 'comercio', que hasta ahora se guardaba y no
 // se usaba para nada.
 export function porTienda(mes) {

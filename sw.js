@@ -1,6 +1,6 @@
 // Cachea el armazon para que la app abra al instante y sin cobertura.
 // El analisis del ticket si necesita red: sin ella se avisa y se reintenta luego.
-const CACHE = "cesta-0.9.1-202609110914";
+const CACHE = "cesta-0.9.2-202609110923";
 const ARMAZON = ["./index.html", "./estilo.css", "./app.js", "./config.js",
   "./contrato.js", "./imagen.js", "./parser.js", "./almacen.js", "./informe.js",
   "./camara.js", "./documento.js", "./version.js",

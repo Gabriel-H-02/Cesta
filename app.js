@@ -2,7 +2,7 @@ import { CLAVE_LS, DATOS_LS, CONFIG } from "./config.js";
 import { cargarImagen, trocear, enderezar } from "./imagen.js";
 import { analizarTicket, coste, probarClave } from "./parser.js";
 import { verificar, guardar, leerTodos, exportar, eur } from "./almacen.js";
-import { resumen, meses, mesLargo, precios, porTienda, compararTiendas } from "./informe.js";
+import { resumen, meses, mesLargo, precios, porTienda, compararTiendas, porProducto, NOMBRE_CATEGORIA } from "./informe.js";
 import { Camara } from "./camara.js";
 import { VERSION, CONSTRUIDA } from "./version.js";
 
@@ -14,7 +14,7 @@ const $ = (s) => document.querySelector(s);
 // este navegador. Es rebuscado, y cuesta cinco lineas cerrarlo.
 const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ESCAPES[c]);
-let bandas = null, ultimo = null, mesActivo = null;
+let bandas = null, ultimo = null, mesActivo = null, categoriaAbierta = null;
 
 /* ---------- navegacion ---------- */
 document.querySelectorAll("nav button").forEach((b) => {
@@ -250,12 +250,25 @@ function pintarInforme() {
     `${r.nCompras} ${r.nCompras === 1 ? "compra" : "compras"} · ${r.lineas.length} artículos · ${eur(r.total / r.nCompras)} de media`;
 
   const tope = r.categorias[0]?.importe || 1;
-  $("#categorias").innerHTML = r.categorias.map((c) => `
-    <div class="barra">
-      <div class="cab"><span>${c.nombre}</span>
+  $("#categorias").innerHTML = r.categorias.map((c) => {
+    const abierta = c.clave === categoriaAbierta;
+    return `
+    <div class="barra pulsable ${abierta ? "abierta" : ""}" data-cat="${esc(c.clave)}" role="button" tabindex="0">
+      <div class="cab"><span>${esc(c.nombre)}</span>
         <span>${eur(c.importe)} <span style="color:var(--tenue)">${Math.round(c.importe / r.total * 100)}%</span></span></div>
       <div class="canal"><div class="relleno" style="width:${c.importe / tope * 100}%"></div></div>
-    </div>`).join("");
+    </div>
+    ${abierta ? detalleDe(c.clave, c.importe) : ""}`;
+  }).join("");
+
+  $("#categorias").querySelectorAll(".pulsable").forEach((el) => {
+    const abrir = () => {
+      categoriaAbierta = categoriaAbierta === el.dataset.cat ? null : el.dataset.cat;
+      pintarInforme();
+    };
+    el.onclick = abrir;
+    el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrir(); } };
+  });
 
   // Por supermercado
   const ts = porTienda(mesActivo);
@@ -293,6 +306,22 @@ function pintarInforme() {
       </div><div style="font-size:.78rem;color:var(--tenue)">
         ${p.puntos.length} observaciones desde ${p.puntos[0].fecha}</div></div>`;
   }).join("") : '<div class="vacio">Hacen falta dos compras del mismo producto para comparar.</div>';
+}
+
+// Lo que hay dentro de una categoría, al desplegarla.
+function detalleDe(clave, totalCategoria) {
+  const ps = porProducto(mesActivo, clave);
+  if (!ps.length) return "";
+  const filas = ps.map((p) => `
+    <tr>
+      <td>${esc(p.producto)}
+        <span class="sub">${p.unidades > 1 ? `${p.unidades} uds · ` : ""}${
+          p.veces > 1 ? `en ${p.veces} compras` : "una compra"}${
+          p.ultimoPrecio ? ` · último ${eur(p.ultimoPrecio)}/${esc(p.unidad || "ud")}` : ""}</span></td>
+      <td class="num">${eur(p.importe)}
+        <span class="sub">${Math.round(p.importe / totalCategoria * 100)}%</span></td>
+    </tr>`).join("");
+  return `<div class="detalle"><table>${filas}</table></div>`;
 }
 
 /* ---------- version ---------- */
