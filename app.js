@@ -342,10 +342,41 @@ function pintarVersion() {
 // Pregunta a la red si hay algo mas nuevo que lo que esta cargado ahora mismo.
 // La comparacion es contra el archivo publicado, no contra el cache, para que
 // no pueda decir que estas al dia cuando no lo estas.
+// Espera a que el service worker nuevo llegue a mandar, o se rinde.
+function esperarRelevo(reg, ms = 8000) {
+  return new Promise((listo) => {
+    let resuelto = false;
+    const acabar = (v) => { if (!resuelto) { resuelto = true; listo(v); } };
+    navigator.serviceWorker.addEventListener("controllerchange", () => acabar(true), { once: true });
+    reg.addEventListener("updatefound", () => {
+      const nuevoSW = reg.installing;
+      nuevoSW?.addEventListener("statechange", () => {
+        if (nuevoSW.state === "installed") reg.waiting?.postMessage({ tipo: "saltar" });
+        if (nuevoSW.state === "activated") acabar(true);
+      });
+    });
+    reg.waiting?.postMessage({ tipo: "saltar" });
+    setTimeout(() => acabar(false), ms);
+  });
+}
+
+// Ultimo recurso: borrar el service worker y todos los caches, y recargar con
+// la URL cambiada para saltarse tambien el cache del navegador. Esto siempre
+// funciona, a costa de volver a descargar los 70 KB.
+async function reinstalarTodo() {
+  const regs = (await navigator.serviceWorker?.getRegistrations()) || [];
+  await Promise.all(regs.map((r) => r.unregister()));
+  const claves = await caches.keys();
+  await Promise.all(claves.map((k) => caches.delete(k)));
+  location.replace(location.pathname + "?v=" + Date.now());
+}
+
 $("#botonActualizar").onclick = async () => {
   const b = $("#botonActualizar");
   const salida = $("#resultadoActualizar");
   b.disabled = true; b.textContent = "Comprobando…";
+  const decir = (clase, html) => salida.innerHTML = `<div class="estado ${clase}"><div>${html}</div></div>`;
+
   try {
     const r = await fetch(`version.js?t=${Date.now()}`, { cache: "no-store" });
     if (!r.ok) throw new Error(`el servidor respondió ${r.status}`);
@@ -354,25 +385,32 @@ $("#botonActualizar").onclick = async () => {
     const fRemota = txt.match(/CONSTRUIDA = "([^"]*)"/)?.[1];
 
     if (vRemota === VERSION && fRemota === CONSTRUIDA) {
-      salida.innerHTML = `<div class="estado bien"><div>Estás en la última versión.</div></div>`;
-    } else {
-      salida.innerHTML = `<div class="estado trabajando"><div>Hay una versión nueva
-        (<b>${esc(vRemota || "?")}</b>${fRemota ? ", del " + esc(fechaLarga(fRemota)) : ""}).
-        Instalando…</div></div>`;
-      const reg = await navigator.serviceWorker?.getRegistration();
-      if (reg) {
-        await reg.update();
-        reg.waiting?.postMessage({ tipo: "saltar" });
-        navigator.serviceWorker.addEventListener("controllerchange", () => location.reload(), { once: true });
-        setTimeout(() => location.reload(true), 2500);
-      } else {
-        location.reload(true);
-      }
+      decir("bien", "Estás en la última versión.");
+      b.disabled = false; b.textContent = "Buscar actualización";
+      return;
     }
+
+    decir("trabajando", `Hay una versión nueva (<b>${esc(vRemota || "?")}</b>). Instalando…`);
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (!reg) return reinstalarTodo();
+
+    await reg.update();
+    if (await esperarRelevo(reg)) { location.reload(); return; }
+
+    // No se relevó en ocho segundos. No se insiste: se arrasa y se recarga.
+    decir("trabajando", "El instalador se resistía. Reinstalando desde cero…");
+    await reinstalarTodo();
   } catch (err) {
-    salida.innerHTML = `<div class="estado mal"><div>No se pudo comprobar: ${esc(err.message)}</div></div>`;
+    decir("mal", `${esc(err.message)}<br>Si se repite, pulsa «Reinstalar desde cero».`);
+    b.disabled = false; b.textContent = "Buscar actualización";
   }
-  b.disabled = false; b.textContent = "Buscar actualización";
+};
+
+$("#botonReinstalar").onclick = async () => {
+  if (!confirm("Se borra la copia local de la app y se descarga de nuevo. Tus tickets y tu clave NO se tocan. ¿Seguir?")) return;
+  $("#botonReinstalar").disabled = true;
+  $("#botonReinstalar").textContent = "Reinstalando…";
+  await reinstalarTodo();
 };
 
 /* ---------- ajustes ---------- */
