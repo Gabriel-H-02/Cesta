@@ -194,6 +194,12 @@ function pintarTicket(d, uso, extra = {}) {
   if (extra.dobleLectura === "discrepan")
     avisos.push("Las dos lecturas no coinciden:<br>" + extra.discrepancias.join("<br>"));
 
+  // El IVA ya no lo decide el modelo. Si la aritmetica tuvo que mover lineas, o
+  // si el desglose admite mas de un reparto, hay que decirlo: es la unica pista
+  // de que la clasificacion podria no ser la que toca.
+  if (extra.iva?.ambiguo)
+    avisos.push("El desglose de IVA admite más de un reparto. El elegido cuadra, pero revisa los tipos.");
+
   const limpio = v.ok && extra.dobleLectura !== "discrepan";
   estado(limpio ? "bien" : "mal",
     limpio
@@ -229,7 +235,7 @@ function pintarTicket(d, uso, extra = {}) {
       <button class="principal" id="botonGuardar">
         ${limpio ? "Guardar" : "Guardar de todas formas"}
       </button>
-      <p class="nota">${d.lineas.length} líneas${extra.segundos ? ` · ${extra.segundos}s` : ""}${extra.modelo ? ` · ${esc(extra.modelo)}` : ""}${coste(uso) === 0 ? " · lectura gratuita" : uso ? ` · ${(coste(uso) * 100).toFixed(1)} céntimos` : ""}<br>
+      <p class="nota">${d.lineas.length} líneas${extra.segundos ? ` · ${extra.segundos}s` : ""}${extra.modelo ? ` · ${esc(extra.modelo)}` : ""}${extra.iva?.resuelto && extra.iva.cambiadas ? ` · IVA recolocado en ${extra.iva.cambiadas} ${extra.iva.cambiadas === 1 ? "línea" : "líneas"}` : ""}${coste(uso) === 0 ? " · lectura gratuita" : uso ? ` · ${(coste(uso) * 100).toFixed(1)} céntimos` : ""}<br>
         Compara las líneas con la foto antes de guardar: la suma de control caza
         omisiones y dígitos mal leídos, pero no dos errores que se compensen.</p>
     </div>`;

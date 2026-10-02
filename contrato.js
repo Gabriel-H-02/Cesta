@@ -120,20 +120,22 @@ seguridad es mejor dejarla vacia que adivinarla: la pantalla la pide a mano.
 IVA
 En Espana: 4% alimentos basicos (pan, leche, queso, huevos, fruta, verdura, legumbre,
 tuberculo, cereal), 10% el resto de alimentos y bebidas sin alcohol, 21% alcohol y
-todo lo que no es comida. Asigna a cada articulo el tipo que le corresponde por ley.
+todo lo que no es comida. Pon a cada articulo el tipo que le corresponde por lo que
+ES, de un vistazo. No hagas cuentas con ello ni intentes que los tramos cuadren: de
+eso se encarga la app, que resuelve el reparto exacto contra el desglose impreso y
+usa tu respuesta solo para elegir entre las combinaciones que cuadran. Un descuento
+lleva el mismo tipo que el articulo al que descuenta.
 
 ARITMETICA, LO MAS IMPORTANTE
-Antes de responder comprueba tu propio trabajo:
-1. La suma de los importes de todas las lineas tiene que dar exactamente el TOTAL
-   impreso. Los descuentos restan.
-2. Si el ticket trae desglose de IVA por tramos, para cada tipo la suma de los
-   importes de las lineas que le has asignado tiene que dar base + cuota de ese tramo.
-   Si el ticket NO lo trae, deja desglose_iva como lista vacia. No lo inventes ni lo
-   calcules tu: solo se transcribe si esta impreso.
-Si alguna comprobacion no cuadra, vuelve a mirar las imagenes: te has saltado una
-linea, has leido mal un digito, has olvidado un descuento, o has clasificado mal un
-articulo. Corrigelo y repite. No entregues numeros que no cuadren y no inventes una
-linea para forzar el cuadre.
+Antes de responder comprueba una sola cosa: que la suma de los importes de todas
+las lineas da exactamente el TOTAL impreso. Los descuentos restan.
+Si no cuadra, vuelve a mirar las imagenes: te has saltado una linea, has leido mal
+un digito, o has olvidado un descuento. Corrigelo y repite. No entregues numeros que
+no cuadren y no inventes una linea para forzar el cuadre.
+
+El desglose de IVA por tramos se TRANSCRIBE tal como esta impreso, y nada mas. No
+lo inventes, no lo calcules y no lo ajustes a tus lineas. Si el ticket no lo trae,
+desglose_iva es una lista vacia.
 
 Devuelve solo los datos que se leen en el ticket.`;
 

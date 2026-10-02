@@ -2,6 +2,7 @@
 // Cambiar de 'directo' a 'servidor' no toca ni la interfaz ni el almacen.
 
 import { CONFIG, CLAVE_LS } from "./config.js";
+import { resolverIva } from "./iva.js";
 import { PETICION_BASE, SISTEMA, ESQUEMA } from "./contrato.js";
 
 function instrucciones(n) {
@@ -95,7 +96,13 @@ async function pedirAGemini(cuerpo, avisar = () => {}, espera = CONFIG.esperaMax
     if (r.status === 401) e.message = `La clave no autentica (401). Es un problema conocido de algunas claves nuevas de AI Studio. ${texto.slice(0, 140)}`;
     else if (r.status === 403) e.message = `Google rechaza la clave (403). ${texto.slice(0, 140)}`;
     else if (r.status === 404) e.message = "Ese modelo no existe o no está disponible para tu cuenta.";
-    else if (r.status === 400) e.message = `Petición rechazada (400). ${texto.slice(0, 220)}`;
+    else if (r.status === 400) {
+      // No todos los modelos admiten todos los niveles de razonamiento:
+      // gemini-3.8-flash rechaza 'minimal'. Se marca para reintentar ese mismo
+      // modelo sin pedir nivel, en vez de tirar la cadena entera por un 400.
+      e.razonamiento = /thinking.?level/i.test(texto);
+      e.message = `Petición rechazada (400). ${texto.slice(0, 220)}`;
+    }
     else if (SATURADO.has(r.status)) e.message = `El modelo está saturado ahora mismo (${r.status}).`;
     else e.message = `Gemini respondió ${r.status} tras ${segundos}s. ${texto.slice(0, 200)}`;
     throw e;
@@ -106,6 +113,10 @@ async function pedirAGemini(cuerpo, avisar = () => {}, espera = CONFIG.esperaMax
 // Recorre la cadena de modelos. Con un modelo saturado reintenta una vez tras
 // una pausa, porque Google dice que esos picos son temporales; si sigue caido,
 // o no hay cuota, o no existe, baja al siguiente.
+// Modelos que ya han rechazado el nivel de razonamiento pedido. Se recuerda
+// dentro de la sesion para no gastar una peticion por ticket descubriendolo.
+const sinRazonamiento = new Set();
+
 async function conCadena(construir, avisar) {
   const cadena = [].concat(CONFIG.modelo.gemini);
   let ultimo;
@@ -114,12 +125,17 @@ async function conCadena(construir, avisar) {
     for (let intento = 0; intento < 2; intento++) {
       try {
         avisar(intento || i ? `probando ${modelo}` : "subiendo");
-        const r = await pedirAGemini(construir(modelo), avisar);
+        const cuerpo = construir(modelo);
+        if (sinRazonamiento.has(modelo)) delete cuerpo.generation_config?.thinking_level;
+        const r = await pedirAGemini(cuerpo, avisar);
         return { ...r, modelo };
       } catch (e) {
         ultimo = e;
         const saturado = SATURADO.has(e.estado);
         if (saturado && intento === 0) { await esperar(2500); continue; }
+        // El modelo existe y responde, solo que no admite este nivel de
+        // razonamiento. Vale la pena repetirle sin pedirselo.
+        if (e.razonamiento && !sinRazonamiento.has(modelo)) { sinRazonamiento.add(modelo); intento--; continue; }
         if (saturado || e.estado === 429 || e.estado === 404) break;  // siguiente modelo
         throw e;                                                      // clave, red, peticion: no insistir
       }
@@ -228,8 +244,16 @@ async function unaLectura(bandas, avisar) {
   return CONFIG.proveedor === "gemini" ? viaGemini(bandas, avisar) : viaAnthropic(bandas);
 }
 
+// El reparto del IVA no se le pide al modelo: lo resuelve iva.js contra el
+// desglose impreso usando su propuesta solo para desempatar. Se aplica aqui para
+// que lo herede todo lo que lee un ticket, la app y las pruebas.
+function conIva(r) {
+  const v = resolverIva(r.datos?.lineas || [], r.datos?.desglose_iva);
+  return { ...r, datos: { ...r.datos, lineas: v.lineas }, iva: v };
+}
+
 export async function analizarTicket(bandas, avisar = () => {}) {
-  if (!CONFIG.dobleLectura) return unaLectura(bandas, avisar);
+  if (!CONFIG.dobleLectura) return conIva(await unaLectura(bandas, avisar));
 
   const [a, b] = await Promise.all([unaLectura(bandas, avisar), unaLectura(bandas, avisar)]);
   const uso = {
@@ -237,9 +261,9 @@ export async function analizarTicket(bandas, avisar = () => {}) {
     output_tokens: (a.uso?.output_tokens || 0) + (b.uso?.output_tokens || 0),
   };
   if (huella(a.datos) === huella(b.datos))
-    return { datos: a.datos, uso, dobleLectura: "coinciden" };
-  return { datos: a.datos, uso, dobleLectura: "discrepan",
-           discrepancias: discrepancias(a.datos, b.datos) };
+    return conIva({ datos: a.datos, uso, dobleLectura: "coinciden" });
+  return conIva({ datos: a.datos, uso, dobleLectura: "discrepan",
+                  discrepancias: discrepancias(a.datos, b.datos) });
 }
 
 // Coste de una lectura. Con Gemini en el nivel gratuito no hay ninguno.

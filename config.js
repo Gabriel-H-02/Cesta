@@ -14,11 +14,17 @@ export const CONFIG = {
   // viene saturado, sin cuota o sin existir.
   //
   // El de moda NO va el primero a proposito: gemini-3.8-flash es el modelo
-  // estrella, se satura (500) y su cuota gratuita es minima. Los de una
-  // generacion atras y los 'lite' estan mucho mas libres y para leer un ticket
-  // dan de sobra, porque las cuentas no se las creemos: las comprobamos aqui.
+  // estrella, se satura y su cuota gratuita es minima. Los de una generacion
+  // atras y los 'lite' estan mucho mas libres y para leer un ticket dan de
+  // sobra, porque las cuentas no se las creemos: las comprobamos aqui. Medido
+  // el 2 de octubre: 3.8-flash devolvio 503 a la primera, y 3.6-flash leyo el
+  // ticket entero bien seis veces de seis.
+  //
+  // gemini-2.5-flash estaba aqui y era un eslabon muerto: Google lo retiro para
+  // cuentas nuevas y devuelve 404 siempre. Lo sustituye 3.8-flash, que al menos
+  // responde cuando no esta saturado.
   modelo: {
-    gemini: ["gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"],
+    gemini: ["gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash"],
     anthropic: "claude-opus-5",
   },
 
@@ -40,10 +46,20 @@ export const CONFIG = {
   // deja la pantalla girando para siempre y no hay forma de saber que pasa.
   esperaMax: 90000,
 
-  // Profundidad de razonamiento de Gemini: 'low' | 'medium' | 'high'.
-  // En 'low' responde bastante antes. Para leer un ticket sobra, porque la
-  // aritmetica no la creemos: la comprobamos aqui.
-  razonamiento: "low",
+  // Profundidad de razonamiento de Gemini: 'minimal' | 'low' | 'medium' | 'high'.
+  //
+  // Medido el 2 de octubre con el ticket del 31 de agosto, seis lecturas: las 14
+  // lineas y el total salen bien SIEMPRE, con cualquier modelo y con cualquier
+  // razonamiento. Leer el ticket no necesita pensar. Lo unico que lo necesitaba
+  // era cuadrar los tramos de IVA, y eso costaba de 15 a 22 segundos en vez de 10.
+  //
+  // Ya no se le pide: el reparto del IVA lo resuelve iva.js contra el desglose
+  // impreso, y la propuesta del modelo solo sirve para elegir entre las
+  // combinaciones que cuadran. Con eso 'minimal' basta.
+  //
+  // No todos los modelos lo admiten: gemini-3.8-flash devuelve 400. parser.js lo
+  // detecta y le repite sin pedir nivel, en vez de tirar la cadena entera.
+  razonamiento: "minimal",
 
   calidadJpeg: 0.8,
 };
