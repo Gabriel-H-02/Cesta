@@ -16,7 +16,9 @@ export const ESQUEMA = {
   properties: {
     comercio: { type: "string", description: "Nombre de la cadena, normalizado y estable entre tickets: mercadona, carrefour, dia, lidl, aldi, alcampo, eroski... En minusculas y sin S.A. ni razon social." },
     tienda: { type: ["string", "null"], description: "Direccion o localidad del establecimiento concreto, si aparece." },
-    fecha: { type: "string", description: "ISO 8601, p.ej. 2026-08-31T14:23" },
+    // Nullable a proposito: una fecha inventada manda el ticket a un mes que no
+    // es, y eso no lo caza ninguna comprobacion. Vacia, la pantalla la pide.
+    fecha: { type: ["string", "null"], description: "ISO 8601, p.ej. 2026-08-31T14:23. En Espana se imprime DD/MM/AAAA. Vacia si no se lee con seguridad." },
     factura: { type: ["string", "null"], description: "Numero de factura simplificada" },
     total: { type: "number" },
     lineas: {
@@ -107,6 +109,13 @@ Transcribelas literalmente en 'descripcion'; el nombre limpio y estable va en
 'producto'. Ese nombre es la clave con la que se compara el mismo articulo entre
 meses Y ENTRE CADENAS, asi que escribelo generico: "leche semidesnatada" y no
 "LECHE SEMI HACENDADO 1L".
+
+LA FECHA
+Va en la cabecera o al pie, en letra pequena, y en Espana se imprime casi siempre
+como DD/MM/AAAA: 03/08/2026 es el 3 de agosto, no el 8 de marzo. A veces el ano
+viene con dos cifras. Escribela como 2026-08-03T14:23, con la hora si esta
+impresa. De este campo cuelga el mes del informe, asi que si no la lees con
+seguridad es mejor dejarla vacia que adivinarla: la pantalla la pide a mano.
 
 IVA
 En Espana: 4% alimentos basicos (pan, leche, queso, huevos, fruta, verdura, legumbre,

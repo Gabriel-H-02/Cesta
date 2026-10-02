@@ -50,3 +50,4 @@ export const CONFIG = {
 
 export const CLAVE_LS = "cesta.apiKey";
 export const DATOS_LS = "cesta.tickets";
+export const CATALOGO_LS = "cesta.catalogo";

@@ -2,6 +2,7 @@
 // se comprueba aqui, en centimos enteros, para que no la estropeen los flotantes.
 
 import { DATOS_LS } from "./config.js";
+import { registrar } from "./catalogo.js";
 
 const cent = (x) => Math.round((Number(x) || 0) * 100);
 export const eur = (x) => (x || 0).toLocaleString("es-ES", { style: "currency", currency: "EUR" });
@@ -46,19 +47,42 @@ export function verificar(d) {
   };
 }
 
+// De la fecha cuelga el mes del informe, y es el campo que mas facil sale mal:
+// el modelo la lee de la letra pequena de la cabecera. Si entra rota, mesDe()
+// hace slice sobre null y el informe se cae entero; si entra con el ano mal, el
+// ticket desaparece en un mes que no existe y nadie lo nota. Asi que se revisa
+// antes de guardar, igual que la aritmetica.
+export function problemaFecha(iso) {
+  if (typeof iso !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return "no se ha podido leer";
+  if (isNaN(new Date(iso))) return "no se entiende";
+  const dia = iso.slice(0, 10);
+  // Un dia de margen porque el movil puede ir en otra zona horaria que el ticket.
+  const manana = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  if (dia > manana) return "esta en el futuro";
+  if (dia < "2000-01-01") return "es anterior al ano 2000";
+  return null;
+}
+
 export function leerTodos() {
   try { return JSON.parse(localStorage.getItem(DATOS_LS)) || []; }
   catch { return []; }
 }
 
 export function guardar(ticket) {
+  const malaFecha = problemaFecha(ticket.fecha);
+  if (malaFecha) return { error: `La fecha ${malaFecha}. Corrigela antes de guardar.` };
+
   const todos = leerTodos();
   const id = `${ticket.fecha}|${ticket.factura || ticket.total}`;
   if (todos.some((t) => t.id === id)) return { duplicado: true, total: todos.length };
   todos.push({ ...ticket, id, guardadoEl: new Date().toISOString() });
-  todos.sort((a, b) => a.fecha.localeCompare(b.fecha));
+  todos.sort((a, b) => (a.fecha || "").localeCompare(b.fecha || ""));
   localStorage.setItem(DATOS_LS, JSON.stringify(todos));
-  return { duplicado: false, total: todos.length };
+  // Los articulos que no estaban se quedan con el nombre que propuso el modelo
+  // esta vez. A partir de ahora manda el catalogo, y se corrigen en frio desde
+  // su pantalla, no aqui de pie en la caja del supermercado.
+  const nuevos = registrar(ticket);
+  return { duplicado: false, total: todos.length, nuevos: nuevos.length };
 }
 
 export function borrar(id) {

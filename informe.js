@@ -2,6 +2,7 @@
 // un ticket, que con estos volumenes es instantaneo y no puede desincronizarse.
 
 import { leerTodos, eur } from "./almacen.js";
+import { resolutor } from "./catalogo.js";
 
 const NOMBRES = {
   frutas_verduras: "Fruta y verdura", carne: "Carne", pescado: "Pescado",
@@ -11,13 +12,22 @@ const NOMBRES = {
   mascotas: "Mascotas", otros: "Otros",
 };
 
+// Todo el informe entra por aqui. El nombre y la categoria con los que se agrupa
+// salen del catalogo, no de lo que el modelo escribio en ese ticket concreto, que
+// cambia de una lectura a otra. Asi unificar dos nombres en el catalogo reordena
+// el historico entero sin reescribir ningun ticket guardado.
+function tickets() {
+  const resolver = resolutor();
+  return leerTodos().map((t) => ({ ...t, lineas: (t.lineas || []).map(resolver) }));
+}
+
 const mesDe = (iso) => iso.slice(0, 7);
 export const mesLargo = (m) =>
   new Date(m + "-01T12:00").toLocaleDateString("es-ES", { month: "long", year: "numeric" });
 
 export function resumen(mes) {
-  const tickets = leerTodos().filter((t) => !mes || mesDe(t.fecha) === mes);
-  const lineas = tickets.flatMap((t) => t.lineas.map((l) => ({ ...l, fecha: t.fecha })));
+  const incluidos = tickets().filter((t) => !mes || mesDe(t.fecha) === mes);
+  const lineas = incluidos.flatMap((t) => t.lineas.map((l) => ({ ...l, fecha: t.fecha })));
 
   const porCategoria = {};
   for (const l of lineas) porCategoria[l.categoria] = (porCategoria[l.categoria] || 0) + l.importe;
@@ -27,7 +37,7 @@ export function resumen(mes) {
     .sort((a, b) => b.importe - a.importe);
 
   const total = lineas.reduce((a, l) => a + l.importe, 0);
-  return { tickets, lineas, categorias, total, nCompras: tickets.length };
+  return { tickets: incluidos, lineas, categorias, total, nCompras: incluidos.length };
 }
 
 export function meses() {
@@ -58,6 +68,7 @@ export function porProducto(mes, categoria) {
 }
 
 export const NOMBRE_CATEGORIA = (c) => NOMBRES[c] || c;
+export const CATEGORIAS = Object.keys(NOMBRES);
 
 // Gasto por cadena. Sale del campo 'comercio', que hasta ahora se guardaba y no
 // se usaba para nada.
@@ -90,7 +101,7 @@ function unitario(l) {
 // que una cadena es la barata.
 export function compararTiendas() {
   const por = {};
-  for (const t of leerTodos()) {
+  for (const t of tickets()) {
     for (const l of t.lineas) {
       const u = unitario(l);
       if (u === null) continue;
@@ -126,7 +137,7 @@ export function compararTiendas() {
 // Solo devuelve los que tienen dos observaciones o mas: con una no hay nada que comparar.
 export function precios() {
   const por = {};
-  for (const t of leerTodos()) {
+  for (const t of tickets()) {
     for (const l of t.lineas) {
       const u = unitario(l);
       if (u === null) continue;

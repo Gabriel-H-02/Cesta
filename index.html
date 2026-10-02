@@ -104,11 +104,26 @@
       <p class="nota" id="notaDatos"></p>
     </div>
   </section>
+
+  <section id="vistaCatalogo" class="oculto">
+    <div class="tarjeta">
+      <h2>Catálogo</h2>
+      <p class="nota" id="resumenCatalogo"></p>
+      <div class="fila" style="margin-top:12px">
+        <button class="fino" id="botonUnificar" disabled>Unificar seleccionados</button>
+        <button class="fino" id="botonNada" disabled>Quitar selección</button>
+      </div>
+    </div>
+    <div class="tarjeta">
+      <div id="listaCatalogo"></div>
+    </div>
+  </section>
 </main>
 
 <nav>
   <button data-vista="Escanear" class="activo"><b>🧾</b>Escanear</button>
   <button data-vista="Informe"><b>📊</b>Informe</button>
+  <button data-vista="Catalogo"><b>🏷️</b>Catálogo</button>
   <button data-vista="Ajustes"><b>⚙️</b>Ajustes</button>
 </nav>
 

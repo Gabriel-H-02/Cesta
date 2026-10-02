@@ -1,8 +1,9 @@
 import { CLAVE_LS, DATOS_LS, CONFIG } from "./config.js";
 import { cargarImagen, trocear, enderezar } from "./imagen.js";
 import { analizarTicket, coste, probarClave } from "./parser.js";
-import { verificar, guardar, leerTodos, exportar, eur } from "./almacen.js";
-import { resumen, meses, mesLargo, precios, porTienda, compararTiendas, porProducto, NOMBRE_CATEGORIA } from "./informe.js";
+import { verificar, guardar, problemaFecha, leerTodos, exportar, eur } from "./almacen.js";
+import { resumen, meses, mesLargo, precios, porTienda, compararTiendas, porProducto, NOMBRE_CATEGORIA, CATEGORIAS } from "./informe.js";
+import { entradas, porNombre, renombrar, clave as claveCatalogo } from "./catalogo.js";
 import { Camara } from "./camara.js";
 import { VERSION, CONSTRUIDA } from "./version.js";
 
@@ -16,13 +17,21 @@ const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ESCAPES[c]);
 let bandas = null, ultimo = null, mesActivo = null, categoriaAbierta = null;
 
+// En hora local, no en UTC: a las 00:30 del dia 2, toISOString todavia dice dia 1
+// y el selector no te dejaria poner la compra de hoy.
+const hoy = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
 /* ---------- navegacion ---------- */
 document.querySelectorAll("nav button").forEach((b) => {
   b.onclick = () => {
     document.querySelectorAll("nav button").forEach((x) => x.classList.toggle("activo", x === b));
-    for (const v of ["Escanear", "Informe", "Ajustes"])
+    for (const v of ["Escanear", "Informe", "Catalogo", "Ajustes"])
       $("#vista" + v).classList.toggle("oculto", v !== b.dataset.vista);
     if (b.dataset.vista === "Informe") pintarInforme();
+    if (b.dataset.vista === "Catalogo") pintarCatalogo();
     if (b.dataset.vista === "Ajustes") pintarAjustes();
   };
 });
@@ -192,6 +201,14 @@ function pintarTicket(d, uso, extra = {}) {
         (extra.dobleLectura === "coinciden" ? " Dos lecturas independientes dan lo mismo." : "")
       : avisos.join("<br>"));
 
+  // La fecha es editable a proposito. El modelo la lee de la letra pequena de la
+  // cabecera, asi que es donde mas se equivoca, y de ella depende el mes del
+  // informe. Tambien es la via para meter un ticket viejo que se quedo sin
+  // escanear: se corrige aqui y entra en su mes, no en el de hoy.
+  const dia = problemaFecha(d.fecha) ? "" : d.fecha.slice(0, 10);
+  // La hora de la compra se conserva tal cual venga; solo se toca el dia.
+  const hora = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(d.fecha || "") ? d.fecha.slice(11, 16) : "12:00";
+
   const filas = d.lineas.map((l) => `
     <tr>
       <td>${l.cantidad > 1 ? `<b>${l.cantidad}×</b> ` : ""}${esc(l.descripcion)}
@@ -201,8 +218,11 @@ function pintarTicket(d, uso, extra = {}) {
 
   $("#resultado").innerHTML = `
     <div class="tarjeta">
-      <h2>${esc(d.comercio)} · ${new Date(d.fecha).toLocaleDateString("es-ES",
-        { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}</h2>
+      <h2>${esc(d.comercio)}</h2>
+      <label class="campofecha">Fecha de la compra
+        <input type="date" id="campoFecha" value="${dia}" max="${hoy()}">
+      </label>
+      <div class="etiqueta" id="destinoMes"></div>
       <table>${filas}
         <tr class="totalfila"><td>Total</td><td class="num">${eur(d.total)}</td></tr>
       </table>
@@ -214,8 +234,27 @@ function pintarTicket(d, uso, extra = {}) {
         omisiones y dígitos mal leídos, pero no dos errores que se compensen.</p>
     </div>`;
 
+  const campoFecha = $("#campoFecha");
+  const destino = $("#destinoMes");
+
+  // Que se vea a que mes va antes de darle a guardar, que es justo lo que no se
+  // puede comprobar despues sin abrir el informe.
+  const repintarDestino = () => {
+    const iso = campoFecha.value ? `${campoFecha.value}T${hora}` : "";
+    const mal = problemaFecha(iso);
+    destino.textContent = mal
+      ? `La fecha ${mal}. Ponla a mano para poder guardar.`
+      : `Entrará en el informe de ${mesLargo(iso.slice(0, 7))}`;
+    destino.classList.toggle("alerta", Boolean(mal));
+    $("#botonGuardar").disabled = Boolean(mal);
+    return iso;
+  };
+  campoFecha.oninput = repintarDestino;
+  repintarDestino();
+
   $("#botonGuardar").onclick = () => {
-    const r = guardar({ ...d, verificado: limpio });
+    const r = guardar({ ...d, fecha: repintarDestino(), verificado: limpio });
+    if (r.error) return estado("mal", esc(r.error));
     estado(r.duplicado ? "mal" : "bien",
       r.duplicado ? "Este ticket ya estaba guardado." : `Guardado. Llevas ${r.total} tickets.`);
     $("#botonGuardar").disabled = true;
@@ -411,6 +450,103 @@ $("#botonReinstalar").onclick = async () => {
   $("#botonReinstalar").disabled = true;
   $("#botonReinstalar").textContent = "Reinstalando…";
   await reinstalarTodo();
+};
+
+/* ---------- catalogo ---------- */
+// Aqui se arregla en frio lo que al escanear se acepta sin preguntar: el modelo
+// propone un nombre la primera vez que ve un articulo, y dos descripciones que
+// son el mismo producto pueden haber entrado con nombres distintos. Unificarlas
+// reordena el historico entero, porque el informe resuelve el nombre contra el
+// catalogo en cada calculo y no lo lleva escrito dentro de cada ticket.
+let seleccion = new Set();
+
+function pintarCatalogo() {
+  const grupos = porNombre();
+  const total = entradas().length;
+
+  // Cuantas veces ha aparecido cada descripcion, para saber cual es el nombre
+  // con mas peso cuando hay que elegir entre dos.
+  const usos = {};
+  for (const t of leerTodos())
+    for (const l of t.lineas || []) usos[claveCatalogo(l.descripcion)] = (usos[claveCatalogo(l.descripcion)] || 0) + 1;
+
+  $("#resumenCatalogo").textContent = total
+    ? `${total} ${total === 1 ? "descripción" : "descripciones"} del ticket en ${grupos.length} ${grupos.length === 1 ? "producto" : "productos"}. ` +
+      "Marca las que sean el mismo artículo y únelas: el informe y la serie de precios se recalculan solos."
+    : "Vacío por ahora. Se llena solo con el primer ticket que guardes.";
+
+  $("#listaCatalogo").innerHTML = total
+    ? grupos.map((g) => `
+        <div class="grupo">
+          <input type="text" class="nombre" data-claves="${esc(g.filas.map((f) => f.clave).join("\u0001"))}"
+                 value="${esc(g.producto)}" aria-label="Nombre del producto">
+          ${g.filas.map((f) => `
+            <label class="desc">
+              <input type="checkbox" data-clave="${esc(f.clave)}" ${seleccion.has(f.clave) ? "checked" : ""}>
+              <span>${esc(f.descripcion)}</span>
+              <span class="etiqueta">${esc(NOMBRE_CATEGORIA(f.categoria))}${usos[f.clave] ? ` · ${usos[f.clave]}×` : " · sin usar"}</span>
+            </label>`).join("")}
+        </div>`).join("")
+    : '<div class="vacio">Escanea un ticket y aquí aparecerán sus artículos.</div>';
+
+  $("#listaCatalogo").querySelectorAll("input.nombre").forEach((i) => {
+    i.onchange = () => {
+      const nombre = i.value.trim();
+      if (!nombre) return pintarCatalogo();
+      renombrar(i.dataset.claves.split("\u0001"), nombre, null);
+      pintarCatalogo();
+    };
+  });
+  $("#listaCatalogo").querySelectorAll('input[type=checkbox]').forEach((c) => {
+    c.onchange = () => {
+      c.checked ? seleccion.add(c.dataset.clave) : seleccion.delete(c.dataset.clave);
+      botonesSeleccion();
+    };
+  });
+  botonesSeleccion();
+}
+
+function botonesSeleccion() {
+  const n = seleccion.size;
+  $("#botonUnificar").disabled = n < 2;
+  $("#botonNada").disabled = n === 0;
+  $("#botonUnificar").textContent = n < 2 ? "Unificar seleccionados" : `Unificar ${n} en uno`;
+}
+
+$("#botonNada").onclick = () => { seleccion.clear(); pintarCatalogo(); };
+
+$("#botonUnificar").onclick = () => {
+  const elegidas = entradas().filter((e) => seleccion.has(e.clave));
+  if (elegidas.length < 2) return;
+  // Se propone el nombre que mas se repite entre los seleccionados, que suele
+  // ser el bueno, pero se puede escribir otro.
+  const cuenta = {};
+  for (const e of elegidas) cuenta[e.producto] = (cuenta[e.producto] || 0) + 1;
+  const sugerido = Object.entries(cuenta).sort((a, b) => b[1] - a[1])[0][0];
+
+  $("#resumenCatalogo").insertAdjacentHTML("afterend", `
+    <div class="tarjeta" id="cajaUnificar" style="margin-top:12px">
+      <p class="nota" style="margin-top:0">Las ${elegidas.length} descripciones pasarán a contar como un solo producto.</p>
+      <input type="text" id="nombreUnificado" value="${esc(sugerido)}" aria-label="Nombre unificado">
+      <select id="categoriaUnificada" style="margin-top:8px">
+        ${CATEGORIAS.map((c) => `<option value="${esc(c)}" ${c === elegidas[0].categoria ? "selected" : ""}>${esc(NOMBRE_CATEGORIA(c))}</option>`).join("")}
+      </select>
+      <div class="fila" style="margin-top:12px">
+        <button class="fino" id="confirmarUnificar">Unificar</button>
+        <button class="fino" id="cancelarUnificar">Cancelar</button>
+      </div>
+    </div>`);
+
+  const cerrar = () => $("#cajaUnificar")?.remove();
+  $("#cancelarUnificar").onclick = cerrar;
+  $("#confirmarUnificar").onclick = () => {
+    const nombre = $("#nombreUnificado").value.trim();
+    if (!nombre) return;
+    renombrar([...seleccion], nombre, $("#categoriaUnificada").value);
+    seleccion.clear();
+    cerrar();
+    pintarCatalogo();
+  };
 };
 
 /* ---------- ajustes ---------- */

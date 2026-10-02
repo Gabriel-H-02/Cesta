@@ -12,10 +12,10 @@
 // cobertura tira de la copia y sigue abriendo. El nombre del cache lo pone
 // publicar.mjs con la version y la fecha.
 
-const CACHE = "cesta-0.9.3-202609121142";
+const CACHE = "cesta-0.9.5-202610020803";
 const ARMAZON = ["./index.html", "./estilo.css", "./app.js", "./config.js",
   "./contrato.js", "./imagen.js", "./parser.js", "./almacen.js", "./informe.js",
-  "./camara.js", "./documento.js", "./version.js",
+  "./camara.js", "./documento.js", "./catalogo.js", "./version.js",
   "./icono.svg", "./manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {

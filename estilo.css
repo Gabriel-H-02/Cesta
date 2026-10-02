@@ -82,8 +82,26 @@ nav button{flex:1;border:0;background:none;border-radius:0;padding:14px 4px 12px
 nav button.activo{color:var(--acento)}
 nav button b{display:block;font-size:1.25rem;font-weight:400;margin-bottom:2px}
 .oculto{display:none}
-input[type=password],input[type=text]{width:100%;padding:12px;border-radius:10px;
+input[type=password],input[type=text],input[type=date]{width:100%;padding:12px;border-radius:10px;
   border:1px solid var(--borde);background:var(--panel2);color:var(--texto);font:inherit}
+/* El selector nativo pinta el icono en negro sobre fondo oscuro y no se ve. */
+input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.6}
+.campofecha{display:block;font-size:.85rem;color:var(--tenue);margin:4px 0 2px}
+.campofecha input{margin-top:6px}
+.etiqueta.alerta{color:var(--alerta);background:transparent;padding-left:0}
+
+/* ---- catalogo ---- */
+.grupo{padding:12px 0;border-bottom:1px solid var(--borde)}
+.grupo:last-child{border-bottom:0}
+.grupo input.nombre{width:100%;padding:10px;border-radius:10px;border:1px solid var(--borde);
+  background:var(--panel2);color:var(--texto);font:inherit;font-weight:600}
+.desc{display:flex;align-items:center;gap:9px;padding:7px 2px 0;font-size:.85rem;color:var(--suave)}
+.desc span:first-of-type{flex:1;min-width:0;overflow-wrap:anywhere}
+.desc input[type=checkbox]{width:20px;height:20px;flex:none;accent-color:var(--acento)}
+select{width:100%;padding:12px;border-radius:10px;border:1px solid var(--borde);
+  background:var(--panel2);color:var(--texto);font:inherit}
+#nombreUnificado{width:100%;padding:12px;border-radius:10px;border:1px solid var(--borde);
+  background:var(--panel2);color:var(--texto);font:inherit}
 p.nota{color:var(--tenue);font-size:.85rem;margin:10px 0 0}
 
 
